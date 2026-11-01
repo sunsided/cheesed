@@ -59,7 +59,7 @@ par: 11
     ####
 
 title: Here, Kitty
-hint: Cats pace back and forth. Paw prints show their next step.
+hint: Cats pace back and forth, one step for every step you take.
 par: 12
 ###########
 #  .   .  #

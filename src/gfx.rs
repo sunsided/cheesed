@@ -318,8 +318,8 @@ impl Screen {
     ///
     /// With `flip`, destination column `sx` reads source column `w - 1 - sx`, so the sprite is
     /// mirrored within its own box and stays at the same position. With `solid`, every opaque
-    /// pixel is drawn in that one color instead of its own; this is how the paw prints get
-    /// their brown tint and how [`Screen::blit_outline`] builds an outline.
+    /// pixel is drawn in that one color instead of its own; this is how
+    /// [`Screen::blit_outline`] builds an outline.
     pub fn blit_ex(&mut self, s: &Sprite, x: i32, y: i32, flip: bool, solid: Option<Rgb>) {
         for sy in 0..s.h {
             for sx in 0..s.w {

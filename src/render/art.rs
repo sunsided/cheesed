@@ -57,10 +57,12 @@ pub struct Art {
     pub brie: Sprite,
     /// A cat walking right (mirrored for left): standing and mid-stride.
     pub cat_right: [Sprite; 2],
-    /// A cat mid-pounce, drawn over the mouse when she is caught.
+    /// The cat crouched on the flattened mouse once she is caught (ears back, mouth open,
+    /// tail up), facing right like the walking frames; mirrored for a cat that came from
+    /// the right.
     pub cat_pounce: Sprite,
-    /// A 5x5 paw print (one pad, two toes). The renderer stamps two of them as a flat brown
-    /// silhouette on the tile each cat will step onto next.
+    /// A 5x5 paw print (one pad, two toes). The renderer stamps two of them, blended dark,
+    /// as footprints on the tiles a cat just left.
     pub paw: Sprite,
     /// A 9x9 gold star for the par rating.
     pub star: Sprite,
@@ -485,21 +487,21 @@ const CAT_RIGHT_2: &str = "
 
 /// A ginger cat pouncing, drawn four pixels above the caught mouse.
 const CAT_POUNCE: &str = "
-    ..........k...k.
-    .........kok.kok
-    .........koooook
-    k.......kookoook
-    ok......kooooooP
-    kok.....kkoRRRk.
-    .kok..kkkooRRk..
-    ..kkkoooHoook...
-    ..kooHooHooook..
-    ..kooHooHoooook.
-    ..kooooooooooook
-    kkoooooooooooook
-    kwwkooooooooookk
-    .kk.kkkkkkk.kwwk
-    ............kkk.
+    ................
+    ................
+    ........k...k...
+    .......kok.kokk.
+    ..k....koHkHook.
+    .kok..kooooooook
+    .kok..kowooowwok
+    ..kok.koGGooGGok
+    ...kkkkoPooooPok
+    ..kooHoooxRRxook
+    ..kooHooHooRRok.
+    .kooooHooHooook.
+    .kwwoooooooooook
+    ..kkwk....kwwkk.
+    ...kk......kk...
     ................
 ";
 

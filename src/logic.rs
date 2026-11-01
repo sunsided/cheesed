@@ -432,6 +432,12 @@ impl World {
     }
 
     /// Whether there is an earlier state to go back to.
+    /// The state `n` steps back in the undo history (1 = the state before the last change),
+    /// if there is one. Used for cosmetic look-backs such as the cats' footprints.
+    pub fn back(&self, n: usize) -> Option<&State> {
+        self.history.len().checked_sub(n).map(|i| &self.history[i])
+    }
+
     /// How many states the undo history holds; grows by one for every step or restart that
     /// changed something, shrinks by one per undo.
     pub fn history_len(&self) -> usize {
@@ -470,27 +476,6 @@ impl World {
             self.history.push(prev);
             self.events.push(Event::Restarted);
         }
-    }
-
-    /// Where each cat will step next turn, if it can move (for the paw-print hint).
-    ///
-    /// One entry per cat, in [`State::cats`] order. This mirrors the cat rule in
-    /// [`State::step`] against the current board, so it is a prediction rather than a
-    /// guarantee: the real turn also sees the mouse's push and the cats that moved before
-    /// this one, either of which can change the outcome.
-    pub fn cat_intents(&self) -> Vec<Option<Pos>> {
-        let s = &self.state;
-        s.cats
-            .iter()
-            .map(|cat| {
-                let ahead = cat.pos.step(cat.dir);
-                if s.free(&self.level, ahead) {
-                    return Some(ahead);
-                }
-                let back = cat.pos.step(cat.dir.reverse());
-                s.free(&self.level, back).then_some(back)
-            })
-            .collect()
     }
 }
 

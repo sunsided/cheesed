@@ -41,7 +41,7 @@ use std::sync::Arc;
 
 use crate::gfx::font::{self, Font};
 use crate::gfx::palette::{self as pal, Rgb};
-use crate::gfx::{H, Screen, W};
+use crate::gfx::{H, Screen, Sprite, W};
 use crate::logic::{CheeseKind, Dir, Level, Pos, Status, World, stars};
 use anim::{Anim, dist, lerp};
 use art::Art;
@@ -328,8 +328,8 @@ impl Renderer {
     ///    adjacent (including diagonally) to an inside tile, so the void around the building
     ///    stays empty.
     /// 2. Brie trails (see [`Trail`]).
-    /// 3. Paw prints on the tile each cat will step onto next turn, while play is waiting for
-    ///    input (no turn animation, or it has finished).
+    /// 3. Footprints: each cat's prints on the tile it just left, and fainter ones on the
+    ///    tile it left the turn before, read from the undo history (see `paw_prints`).
     /// 4. Cheeses, interpolated from the previous state. A cheese whose move starts or ends on a
     ///    hole sinks into or rises out of it during the half of the move spent over the hole:
     ///    it is drawn up to `SINK` pixels lower and clipped at row 13 of the hole's tile, so
@@ -426,15 +426,23 @@ impl Renderer {
             None => (state, None),
         };
 
-        // Where each cat will go next: faint paw prints.
-        if state.status == Status::Playing && walk.is_none_or(Anim::done) {
-            for (i, next) in w.cat_intents().into_iter().enumerate() {
-                if let Some(n) = next {
-                    let (x, y) = (ox + n.x * TILE, oy + n.y * TILE);
-                    let flip = state.cats[i].dir == Dir::Left;
-                    let (a, b) = if flip { (8, 3) } else { (3, 8) };
-                    s.blit_ex(&self.art.paw, x + a, y + 3, false, Some(pal::BROWN));
-                    s.blit_ex(&self.art.paw, x + b, y + 8, false, Some(pal::BROWN));
+        // Footprints: each cat leaves prints on the tile it just left, and fainter ones on
+        // the tile it left the turn before, so the trail fades over two steps. They are
+        // read from the undo history, so they follow undo; a pair of states only leaves
+        // prints when it is one real move apart (not a restart) and the cat walked one tile.
+        let steps = [(w.back(1), Some(state), 0.8), (w.back(2), w.back(1), 0.4)];
+        for (older, newer, alpha) in steps {
+            let (Some(older), Some(newer)) = (older, newer) else {
+                continue;
+            };
+            if newer.moves != older.moves + 1 {
+                continue;
+            }
+            for (o, n) in older.cats.iter().zip(&newer.cats) {
+                if dist(o.pos, n.pos) == 1 {
+                    let d = (n.pos.x - o.pos.x, n.pos.y - o.pos.y);
+                    let at = (ox + o.pos.x * TILE, oy + o.pos.y * TILE);
+                    paw_prints(s, &self.art.paw, at, d, alpha);
                 }
             }
         }
@@ -486,13 +494,31 @@ impl Renderer {
 
         // Cats.
         let caught = state.status == Status::Caught;
+        // The cat that made the catch: the one on the mouse's tile, or (when the mouse
+        // walked into a cat that then stepped off) the one right next to it. Once the turn
+        // has played out it is drawn pouncing onto the mouse instead of walking, so it must
+        // not be drawn twice.
+        let pouncer = (caught && walk.is_none_or(Anim::done))
+            .then(|| {
+                state
+                    .cats
+                    .iter()
+                    .position(|c| c.pos == state.mouse)
+                    .or_else(|| {
+                        state
+                            .cats
+                            .iter()
+                            .position(|c| dist(c.pos, state.mouse) <= 1)
+                    })
+            })
+            .flatten();
         for (i, cat) in state.cats.iter().enumerate() {
             let a = from.cats.get(i).map_or(cat.pos, |f| f.pos);
             let u = walk.map_or(1.0, Anim::walk);
             let (fx, fy) = lerp(a, cat.pos, u);
             let (x, y) = px(fx, fy);
             let left = facing_left(cat.dir, from.cats.get(i).map(|c| c.dir));
-            if caught && cat.pos == state.mouse && walk.is_none_or(Anim::done) {
+            if pouncer == Some(i) {
                 continue; // Drawn pouncing below.
             }
             let frame = usize::from(u > 0.3 && u < 1.0);
@@ -506,12 +532,16 @@ impl Renderer {
         let (x, y) = px(fx, fy);
         if caught && walk.is_none_or(Anim::done) {
             s.blit(&self.art.mouse_caught, x, y);
-            if let Some(cat) = state.cats.iter().find(|c| c.pos == state.mouse) {
-                s.blit_ex(&self.art.cat_pounce, x, y - 4, cat.dir == Dir::Left, None);
-            } else if let Some(c) = state.cats.iter().find(|c| dist(c.pos, state.mouse) <= 1) {
-                // Walked into a cat that then stepped off: it still gets the pounce.
-                let (cx, cy) = (ox + c.pos.x * TILE, oy + c.pos.y * TILE);
-                s.blit_ex(&self.art.cat_pounce, cx, cy, c.pos.x > state.mouse.x, None);
+            if let Some(cat) = pouncer.map(|i| state.cats[i]) {
+                // Crouched on top of the flattened mouse, facing the way it came from: a
+                // cat on the mouse's tile faces its walking direction; one beside it faces
+                // the mouse.
+                let left = if cat.pos == state.mouse {
+                    cat.dir == Dir::Left
+                } else {
+                    cat.pos.x > state.mouse.x
+                };
+                s.blit_ex(&self.art.cat_pounce, x, y - 4, left, None);
             }
         } else {
             let moving = u > 0.0 && u < 1.0;
@@ -991,6 +1021,29 @@ fn blink(t: f32) -> bool {
 /// 3x3 neighbourhood, so diagonal contact counts and outer corners are drawn.
 fn touches_inside(level: &Level, p: Pos) -> bool {
     (-1..=1).any(|dy| (-1..=1).any(|dx| level.inside(Pos::new(p.x + dx, p.y + dy))))
+}
+
+/// Two paw prints on a tile (`x, y` its top-left pixel), staggered along the walking
+/// direction `d` (a unit step in tiles) like a left and a right paw, blended over the floor
+/// with opacity `alpha`.
+fn paw_prints(s: &mut Screen, paw: &Sprite, (x, y): (i32, i32), d: (i32, i32), alpha: f32) {
+    // Offsets of the two prints inside the 16x16 tile: one behind and to one side, one
+    // ahead and to the other, so they read as a stride in the direction of travel.
+    let spots = match d {
+        (1, _) => [(2, 8), (9, 3)],
+        (-1, _) => [(9, 8), (2, 3)],
+        (_, 1) => [(3, 2), (8, 9)],
+        _ => [(8, 9), (3, 2)],
+    };
+    for (dx, dy) in spots {
+        for py in 0..paw.h {
+            for px in 0..paw.w {
+                if paw.px[(py * paw.w + px) as usize].is_some() {
+                    s.blend(x + dx + px, y + dy + py, pal::INK, alpha);
+                }
+            }
+        }
+    }
 }
 
 /// Whether a cat's sprite should be mirrored to face left. A cat walking left faces left
