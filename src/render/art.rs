@@ -95,7 +95,9 @@ impl Art {
             ],
             mouse_down: [
                 Sprite::parse(MOUSE_DOWN),
-                feet_swapped(Sprite::parse(MOUSE_DOWN)),
+                // The feet row is symmetric, so mirroring it changes nothing: shuffle the
+                // feet inward instead.
+                patched(MOUSE_DOWN, &[(14, "...kPkkkkkkPk...")]),
             ],
             mouse_up: [
                 Sprite::parse(MOUSE_UP),
@@ -170,7 +172,8 @@ fn patched(art: &str, rows: &[(usize, &str)]) -> Sprite {
 /// The feet are on the second-to-last row (the last row is left free for the tail in the
 /// back view). Reversing that one row moves an off-center foot or tail detail to the other
 /// side, which reads as a step when the two frames alternate. If the row is already
-/// symmetric, the frame comes out identical to the original.
+/// symmetric, the frame comes out identical to the original, which is why the front view
+/// uses a hand-made feet row via `patched` instead.
 fn feet_swapped(mut s: Sprite) -> Sprite {
     let y = s.h - 2;
     let row = (y * s.w) as usize..((y + 1) * s.w) as usize;

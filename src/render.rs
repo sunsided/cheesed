@@ -481,8 +481,6 @@ impl Renderer {
                     s.put(gx, gy + 2, pal::WHITE);
                 } else if (0.5..0.8).contains(&phase) {
                     let rise = ((phase - 0.5) * 20.0) as i32;
-                    // Note: the tiny font has no `^` glyph (only Font::Normal does), so this
-                    // heart currently draws nothing.
                     font::draw(s, Font::Tiny, x + 6, y - rise + 2, "^", pal::PINK);
                 }
             }
@@ -997,13 +995,11 @@ fn touches_inside(level: &Level, p: Pos) -> bool {
     (-1..=1).any(|dy| (-1..=1).any(|dx| level.inside(Pos::new(p.x + dx, p.y + dy))))
 }
 
-/// Cats face the way they walk; walking up or down they keep their last sideways look.
-///
-/// `prev` is the cat's direction in the state the frame interpolates from (the state before
-/// the move while a turn animation exists, otherwise the current state). A cat heading up
-/// or down faces left only if `prev` was `Left`; in every other case it faces right. The
-/// "last sideways look" therefore only survives one turn: once `prev` is itself vertical,
-/// the cat faces right.
+/// Whether a cat's sprite should be mirrored to face left. A cat walking left faces left
+/// and one walking right faces right. Cats only ever reverse direction (left/right or
+/// up/down) and never change axis, so a cat on a vertical patrol has never moved sideways
+/// and simply faces right; `prev` (its direction before this turn's animation) only
+/// matters for consistency during the tween.
 fn facing_left(dir: Dir, prev: Option<Dir>) -> bool {
     match dir {
         Dir::Left => true,

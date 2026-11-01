@@ -124,7 +124,7 @@ fn glaring_eyes(s: &mut Screen, (ox, oy): (i32, i32), t: f32) {
 ///   (196, 99); a sparkle on the full moon at (201, 28); `glaring_eyes`; a large orange
 ///   glow (radius 22, 1.2 times the flicker) on the fire under the pot at (202, 184) and a
 ///   yellow one (radius 14) on the lantern at the left edge at (13, 160); and bubbles on
-///   the fondue: five ring outlines spread across x = 176..228 on row 136, each growing
+///   the fondue: five ring outlines spread across x = 176..228 and rows 136..140, each growing
 ///   from radius 1 to 2 over a 1.1 s cycle (0.9 cycles per second, staggered by 0.37) and
 ///   hidden for the last 15% of it, as if it popped.
 ///
@@ -171,7 +171,7 @@ pub fn draw(s: &mut Screen, pic: &Picture, episode: usize, t: f32) {
             for i in 0..5 {
                 let phase = (t * 0.9 + i as f32 * 0.37).fract();
                 let bx = ox + 176 + (i * 13) % 56;
-                let by = oy + 136 + (i * 5) % 5;
+                let by = oy + 136 + (i * 3) % 5;
                 let r = (phase * 3.0) as i32;
                 if phase < 0.85 {
                     s.circle_outline(bx, by, r.max(1), pal::YELLOW_LT);
