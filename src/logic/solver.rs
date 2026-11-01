@@ -72,14 +72,12 @@ pub fn solve_from(level: &Level, start: State, max_states: usize) -> Outcome {
     if start.status == Status::Solved {
         return Outcome::Solved(Vec::new());
     }
-    // With spare cheeses any one of them may end up as a doorstop, so only prune when
-    // every cheese has to end up in a hole.
+    // Every cheese has to end up in a hole, so one stuck where it never can is a dead end.
     let live = live_tiles(level);
     let dead = |s: &State| {
-        s.cheeses.len() == level.holes.len()
-            && s.cheeses
-                .iter()
-                .any(|c| !live[(c.pos.y * level.w + c.pos.x) as usize])
+        s.cheeses
+            .iter()
+            .any(|c| !live[(c.pos.y * level.w + c.pos.x) as usize])
     };
     // Parent links: key -> (parent key, move).
     let mut seen: HashMap<Key, Option<(Key, Dir)>> = HashMap::new();

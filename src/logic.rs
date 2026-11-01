@@ -360,7 +360,7 @@ mod tests {
 
     #[test]
     fn cannot_push_two_cheeses() {
-        let mut w = world("######\n#@$$.#\n######");
+        let mut w = world("#######\n#@$$..#\n#######");
         assert!(!w.step(Dir::Right));
         assert_eq!(w.state.mouse, Pos::new(1, 1));
     }
@@ -385,7 +385,7 @@ mod tests {
         let mut w = world("########\n#@b .  #\n########");
         assert!(w.step(Dir::Right));
         assert_eq!(w.state.cheeses[0].pos, Pos::new(6, 1));
-        let mut w = world("########\n#@b .$ #\n########");
+        let mut w = world("########\n#@b .$.#\n########");
         assert!(w.step(Dir::Right));
         assert_eq!(
             w.state.cheeses[0].pos,

@@ -1,9 +1,11 @@
 ; The built-in levels. Format: see src/logic/level.rs. `par` must equal the solver's
 ; optimum: `cargo test` checks it, `cargo run --release --example solve` prints it.
 ;
-; Design notes: a cheese on a tile next to an outer wall can never be pushed away from it;
-; brie needs a backstop behind its hole; a wheel needs three free tiles in a row (run-up,
-; push spot, wheel) for every push that starts it moving.
+; Design notes: every cheese ends in a hole (exactly one cheese per hole; a leftover cheese
+; reads as unfinished). A cheese on a tile next to an outer wall can never be pushed away
+; from it; brie needs a backstop behind its hole (a wall, or another cheese already home);
+; a wheel needs three free tiles in a row (run-up, push spot, wheel) for every push that
+; starts it moving.
 
 title: First Bite
 hint: Push the cheese into the mouse hole!
@@ -35,11 +37,11 @@ par: 13
 
 title: Slippery Brie
 hint: Brie is slippery: it slides until it hits something.
-par: 18
+par: 23
 ###########
 #@ b     .#
 #         #
-# $  b  . #
+# $   b.. #
 #         #
 ###########
 
@@ -78,14 +80,15 @@ par: 36
 
 title: Cheese Wall
 hint: Cheese stops cats too.
-par: 15
-##########
-#        #
-#  $  $  #
-#>       #
-#   $    #
-#@ #..#  #
-##########
+par: 24
+###########
+#@ $     .#
+#         #
+#### #### #
+#>.   $   #
+#### ######
+#    $   .#
+###########
 
 title: Big Cheese
 par: 36

@@ -158,9 +158,10 @@ impl Level {
         if holes.is_empty() {
             return Err(format!("{title}: no mouse holes"));
         }
-        if cheeses.len() < holes.len() {
+        // Exactly one cheese per hole: a cheese left over at the end reads as unfinished.
+        if cheeses.len() != holes.len() {
             return Err(format!(
-                "{title}: {} holes but only {} cheeses",
+                "{title}: {} holes but {} cheeses (every cheese needs a hole)",
                 holes.len(),
                 cheeses.len()
             ));
@@ -246,12 +247,15 @@ mod tests {
 
     #[test]
     fn parses_tiles() {
-        let l = Level::parse("title: T\npar: 3\n######\n#+*ob#\n#  > #\n######").unwrap();
+        let l = Level::parse("title: T\npar: 3\n######\n#+*ob#\n# .> #\n######").unwrap();
         assert_eq!(l.title, "T");
         assert_eq!(l.par, 3);
         assert_eq!((l.w, l.h), (6, 4));
         assert_eq!(l.mouse, Pos::new(1, 1));
-        assert_eq!(l.holes, vec![Pos::new(1, 1), Pos::new(2, 1)]);
+        assert_eq!(
+            l.holes,
+            vec![Pos::new(1, 1), Pos::new(2, 1), Pos::new(2, 2)]
+        );
         assert_eq!(l.cheeses.len(), 3);
         assert_eq!(l.cats[0].dir, Dir::Right);
         assert!(l.wall(Pos::new(0, 0)) && l.wall(Pos::new(-1, 2)));
@@ -265,6 +269,10 @@ mod tests {
         assert!(
             Level::parse("#####\n#@..$\n#####").is_err(),
             "too few cheeses"
+        );
+        assert!(
+            Level::parse("######\n#@$$.#\n######").is_err(),
+            "a spare cheese"
         );
         assert!(Level::parse("####\n#@$.\n####").is_err(), "gap in the wall");
     }
