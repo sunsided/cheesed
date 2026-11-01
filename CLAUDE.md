@@ -357,7 +357,9 @@ See README.md for the rules. Sister project of `../cookie-doh` (same architectur
   `with_glow` (warm pixels pulse in rings from a center), `with_twinkle` (stars, candle-lit
   windows) and `with_flash` (bolts/clouds blaze on `title::flash_strength`, thunder via
   `title::struck` on the title and the episode 1 intro). Rects are hand-placed in picture
-  pixels. Re-run `task cover`
+  pixels. The PNGs in `art/` are
+  git-ignored and live only locally: only the converted `.bin` files are committed, so
+  keep your own copies of the paintings. Re-run `task cover`
   after changing a painting (and re-check the water rectangles if the composition moved). The level menu plays the
   shareware joke (locked episodes, `order_form`); keep it silly.
 - Brie leaves cosmetic `render::Trail`s (app-side, wiped on undo past their turn).

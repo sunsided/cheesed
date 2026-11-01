@@ -7,3 +7,7 @@
 /Taskfile.yml
 /Taskfile.yaml
 /src/render/*.preview.png
+
+# Source paintings stay local (they are large); the game embeds the converted
+# src/render/*.bin files, regenerated from these by `task cover`.
+/art/*.png
