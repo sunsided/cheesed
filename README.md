@@ -9,7 +9,7 @@ and every mouse hole needs a cheese in it.
 - **Arrows** (WASD, HJKL, D-pad, or tap/click towards where you want to go): walk. Walk into
   a cheese to push it. You can push one cheese at a time, and you can never pull.
 - **Z** (U, Backspace, pad B): undo - as often as you like. **R** (pad Y): restart (undoable).
-- **P** pause, **Esc** back to the level menu, **M** mute, **C** scanlines.
+- **P** pause, **Esc** back to the level menu (and from there: farewell), **M** mute, **C** scanlines.
 
 ## Cheeses
 

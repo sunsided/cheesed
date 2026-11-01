@@ -5,8 +5,10 @@ pub mod anim;
 pub mod art;
 pub mod defeat;
 pub mod ending;
+pub mod farewell;
 pub mod fx;
 pub mod intro;
+pub mod onward;
 pub mod picture;
 pub mod title;
 
@@ -170,6 +172,8 @@ pub struct Renderer {
     intros: [picture::Picture; intro::EPISODES],
     victory: picture::Picture,
     defeat: picture::Picture,
+    onward: picture::Picture,
+    farewell: picture::Picture,
 }
 
 impl Default for Renderer {
@@ -190,6 +194,8 @@ impl Renderer {
             ],
             victory: picture::Picture::victory_episode_1(),
             defeat: picture::Picture::defeat(),
+            onward: picture::Picture::onward_episode_1(),
+            farewell: picture::Picture::farewell(),
         }
     }
 
@@ -679,11 +685,11 @@ impl Renderer {
         font::draw_centered(s, Font::Tiny, W / 2, y + 18, &rec, pal::PALE);
         let (help, color) = if v.cheese {
             (
-                "ARROWS PICK  SPACE PLAY  ESC TITLE  -  CHEESE MODE: I INTRO  E ENDING",
+                "ARROWS PICK  SPACE PLAY  ESC EXIT  -  CHEESE: I INTRO  E END  F FAREWELL",
                 pal::PINK,
             )
         } else {
-            ("ARROWS PICK  SPACE PLAY  ESC TITLE", pal::STEEL_LT)
+            ("ARROWS PICK  SPACE PLAY  ESC EXIT", pal::STEEL_LT)
         };
         font::draw_centered(s, Font::Tiny, W / 2, y + 28, help, color);
 
@@ -707,6 +713,16 @@ impl Renderer {
     /// The end of episode one.
     pub fn draw_end(&self, s: &mut Screen, earned: u32, max: u32, t: f32) {
         ending::draw(s, &self.victory, earned, max, t);
+    }
+
+    /// "Farewell!", when leaving the game.
+    pub fn draw_farewell(&self, s: &mut Screen, t: f32) {
+        farewell::draw(s, &self.farewell, t);
+    }
+
+    /// The "Onward!" card after the ending.
+    pub fn draw_onward(&self, s: &mut Screen, t: f32) {
+        onward::draw(s, &self.onward, t);
     }
 }
 

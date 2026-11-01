@@ -61,7 +61,7 @@ tasks:
   cover:
     desc: Re-convert the paintings in art/ into the embedded 256-color pictures (needs Pillow)
     sources: [art/*.png, tools/cover.py]
-    generates: [src/render/cover.bin, src/render/intro1.bin, src/render/intro2.bin, src/render/intro3.bin, src/render/victory.bin, src/render/defeat.bin]
+    generates: [src/render/cover.bin, src/render/intro1.bin, src/render/intro2.bin, src/render/intro3.bin, src/render/victory.bin, src/render/defeat.bin, src/render/onward.bin, src/render/farewell.bin]
     cmds:
       - python3 tools/cover.py art/cover.png src/render/cover.bin
       - python3 tools/cover.py art/intro-episode-1.png src/render/intro1.bin
@@ -69,6 +69,8 @@ tasks:
       - python3 tools/cover.py art/intro-episode-3.png src/render/intro3.bin
       - python3 tools/cover.py art/victory-episode-1.png src/render/victory.bin
       - python3 tools/cover.py art/defeat.png src/render/defeat.bin
+      - python3 tools/cover.py art/onward-episode-1.png src/render/onward.bin
+      - python3 tools/cover.py art/farewell.png src/render/farewell.bin
       - rm -f src/render/*.preview.png
 
   fmt:

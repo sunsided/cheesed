@@ -3,7 +3,7 @@
 
     python3 tools/cover.py art/cover.png src/render/cover.bin
 
-Fits the image to 200 rows (keeping its aspect), reduces it to a 256-color palette with
+Crops a picture wider than 16:10 to 16:10, fits it to 200 rows (keeping its aspect), reduces it to a 256-color palette with
 Floyd-Steinberg dithering, and writes a tiny raw format the game embeds with include_bytes!:
 
     u16 width, u16 height (little endian), u8 palette size - 1,
@@ -20,6 +20,12 @@ COLORS = 256
 
 def main(src, dst):
     im = Image.open(src).convert("RGB")
+    # Wider than the 16:10 screen (say 16:9): crop the sides evenly.
+    target = 320 / 200
+    if im.width / im.height > target + 0.01:
+        w = round(im.height * target)
+        x0 = (im.width - w) // 2
+        im = im.crop((x0, 0, x0 + w, im.height))
     w = round(im.width * H / im.height)
     im = im.resize((w, H), Image.LANCZOS)
     q = im.quantize(colors=COLORS, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.FLOYDSTEINBERG)

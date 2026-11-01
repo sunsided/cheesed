@@ -18,6 +18,22 @@ pub struct Picture {
     twinkle: Vec<Twinkle>,
     /// Pixels lit up by the lightning (bolts, storm clouds).
     flash: Vec<Flash>,
+    /// Cloth waving in the wind (flags).
+    flutter: Vec<Flutter>,
+}
+
+/// Flags in the wind: light and shade ripple along the cloth.
+pub struct Flutter {
+    px: Vec<Px>,
+}
+
+impl Flutter {
+    fn draw(&self, s: &mut Screen, (ox, oy): (i32, i32), t: f32) {
+        for &(x, y, c) in &self.px {
+            let wave = (t * 9.0 - x as f32 * 1.3 + y as f32 * 0.5).sin();
+            s.put(ox + x, oy + y, c.scale(0.8 + 0.35 * wave));
+        }
+    }
 }
 
 /// A picture pixel selected for an effect: position and its painted color.
@@ -150,6 +166,7 @@ impl Picture {
             glow: Vec::new(),
             twinkle: Vec::new(),
             flash: Vec::new(),
+            flutter: Vec::new(),
         })
     }
 
@@ -207,6 +224,21 @@ impl Picture {
             .map(|(x, y, c)| (x, y, c, hash01(x / cl, y / cl)))
             .collect();
         self.twinkle.push(Twinkle { px, depth, rate });
+        self
+    }
+
+    /// Flag pixels that `pick` accepts flutter, inside tight boxes around each flag (a
+    /// sunset sky is full of reds that must stay put).
+    pub fn with_flutter(
+        mut self,
+        flags: &[(i32, i32, i32, i32)],
+        pick: impl Fn(Rgb) -> bool,
+    ) -> Self {
+        let px = flags
+            .iter()
+            .flat_map(|&r| self.select(r, |_, _, c| pick(c)))
+            .collect();
+        self.flutter.push(Flutter { px });
         self
     }
 
@@ -291,11 +323,24 @@ impl Picture {
             .with_flash((150, 0, 240, 40), 0.7, cloud)
     }
 
-    /// The little waterfall under the castle flows.
+    /// The little waterfall under the castle flows and the castle's flags wave.
     pub fn intro_episode_2() -> Picture {
         Picture::parse(include_bytes!("intro2.bin"))
             .expect("embedded intro parses")
             .with_water((188, 70, 200, 92), 120)
+            .with_flutter(
+                &[
+                    (223, 17, 237, 25),
+                    (212, 27, 219, 33),
+                    (239, 32, 253, 41),
+                    (187, 52, 197, 58),
+                    (249, 49, 256, 53),
+                    (261, 47, 267, 51),
+                    (217, 41, 222, 46),
+                ],
+                // These flags are a deep crimson; the boxes are tight enough for a loose red.
+                |c| c.0 > 110 && c.0 as u32 > 2 * c.1 as u32 && c.0 as u32 * 2 > 3 * c.2 as u32,
+            )
     }
 
     /// The waterfall below the castle flows.
@@ -305,11 +350,45 @@ impl Picture {
             .with_water((143, 58, 163, 108), 95)
     }
 
+    /// Leaving: the castle's flag waves; its windows and the torchlit path up the mountain
+    /// twinkle. (The painting's faint stars don't survive 256 colours.)
+    pub fn farewell() -> Picture {
+        let warm = |c: Rgb| c.0 > 200 && c.1 > 140 && c.2 < 140;
+        Picture::parse(include_bytes!("farewell.bin"))
+            .expect("embedded farewell parses")
+            .with_flutter(&[(258, 72, 266, 77)], |c| {
+                c.0 > 120 && c.0 as u32 > 2 * c.1 as u32 && c.0 as u32 * 2 > 3 * c.2 as u32
+            })
+            .with_twinkle((244, 78, 272, 102), 2, 0.45, 5.0, warm)
+            .with_twinkle((240, 100, 284, 142), 2, 0.5, 4.0, warm)
+    }
+
     /// Caught: the cheese, just out of reach, glows.
     pub fn defeat() -> Picture {
         Picture::parse(include_bytes!("defeat.bin"))
             .expect("embedded defeat parses")
             .with_glow((246, 104, 316, 160), (279, 137), 0.4)
+    }
+
+    /// After the ending, "Onward!": the torch flickers, the waterfall flows and the castle's
+    /// flags wave.
+    pub fn onward_episode_1() -> Picture {
+        // Only the flame's bright core: the torch-lit wall around it must stay still.
+        let flame = |c: Rgb| luma(c) > 200 && c.2 < 200;
+        Picture::parse(include_bytes!("onward.bin"))
+            .expect("embedded onward parses")
+            .with_water((264, 136, 298, 178), 110)
+            .with_twinkle((60, 2, 76, 22), 2, 0.15, 9.0, flame)
+            .with_flutter(
+                &[
+                    (282, 49, 292, 56),
+                    (272, 58, 279, 63),
+                    (289, 57, 297, 63),
+                    (256, 64, 265, 70),
+                ],
+                // Bright flag red only: the sunset behind is red too.
+                |c| c.0 > 180 && c.1 < 80 && c.2 < 90,
+            )
     }
 
     /// The river in the valley flows.
@@ -322,6 +401,26 @@ impl Picture {
     fn get(&self, x: i32, y: i32) -> Rgb {
         let (x, y) = (x.clamp(0, self.w - 1), y.clamp(0, self.h - 1));
         self.palette[self.px[(y * self.w + x) as usize] as usize]
+    }
+
+    /// Distinct light points in `rect` (picture pixels) that `pick` accepts, at least
+    /// `spacing` apart: one per lamp or window rather than every pixel of it.
+    pub fn spots(
+        &self,
+        rect: (i32, i32, i32, i32),
+        spacing: i32,
+        pick: impl Fn(Rgb) -> bool,
+    ) -> Vec<(i32, i32)> {
+        let mut out: Vec<(i32, i32)> = Vec::new();
+        for (x, y, _) in self.select(rect, |_, _, c| pick(c)) {
+            if out
+                .iter()
+                .all(|&(a, b)| (a - x).abs() + (b - y).abs() >= spacing)
+            {
+                out.push((x, y));
+            }
+        }
+        out
     }
 
     /// Where the picture's top-left lands on screen (centered).
@@ -361,6 +460,9 @@ impl Picture {
         for f in &self.flash {
             f.draw(s, (ox, oy), t);
         }
+        for f in &self.flutter {
+            f.draw(s, (ox, oy), t);
+        }
     }
 
     /// How many pixels are animated as water (for tests).
@@ -389,6 +491,35 @@ pub fn sparkle(s: &mut Screen, x: i32, y: i32, r: i32) {
     s.put(x, y, pal::WHITE);
 }
 
+/// A quick gleam at a point once every `period` seconds (shifted by `offset`): a sparkle
+/// that swells and shrinks within a quarter second.
+pub fn gleam(s: &mut Screen, (x, y): (i32, i32), t: f32, period: f32, offset: f32) {
+    let c = (t - offset).rem_euclid(period);
+    if c < 0.25 {
+        let r = (3.5 * (1.0 - (c / 0.125 - 1.0).abs())).round() as i32;
+        if r > 0 {
+            sparkle(s, x, y, r);
+        }
+    }
+}
+
+/// A painted highlight brought alive (a sword's reflection): a star whose rays breathe,
+/// with a diagonal cross that flashes out at the peak.
+pub fn flare(s: &mut Screen, (x, y): (i32, i32), t: f32) {
+    let pulse = ((t * 2.2).sin() * 0.5 + 0.5).powi(2);
+    let r = (2.0 + 5.0 * pulse).round() as i32;
+    sparkle(s, x, y, r);
+    if pulse > 0.6 {
+        let d = ((pulse - 0.6) * 7.0).round() as i32;
+        for k in 1..=d {
+            let a = 0.8 * (1.0 - k as f32 / (d + 1) as f32);
+            for (dx, dy) in [(k, k), (-k, k), (k, -k), (-k, -k)] {
+                s.blend(x + dx, y + dy, pal::WHITE, a);
+            }
+        }
+    }
+}
+
 /// Glints hopping between `spots` (picture pixels): one at a time, then a pause.
 pub fn glints(s: &mut Screen, pic: &Picture, spots: &[(i32, i32)], t: f32, rate: f32) {
     let (ox, oy) = pic.origin();
@@ -411,6 +542,8 @@ mod tests {
             Picture::intro_episode_3(),
             Picture::victory_episode_1(),
             Picture::defeat(),
+            Picture::onward_episode_1(),
+            Picture::farewell(),
         ] {
             assert_eq!(p.h, H);
             assert!(p.w <= W);
@@ -442,6 +575,28 @@ mod tests {
         );
         let (glow, _, flash) = Picture::intro_episode_1().effect_pixels();
         assert!(glow > 200 && flash > 30, "{glow} {flash}");
+        let flags: usize = Picture::onward_episode_1()
+            .flutter
+            .iter()
+            .map(|f| f.px.len())
+            .sum();
+        assert!(
+            (12..=40).contains(&flags),
+            "{flags} flag pixels: flags only, no sky"
+        );
+        let flags: usize = Picture::intro_episode_2()
+            .flutter
+            .iter()
+            .map(|f| f.px.len())
+            .sum();
+        assert!((60..=130).contains(&flags), "{flags} episode 2 flag pixels");
+    }
+
+    #[test]
+    fn farewell_road_has_lamps() {
+        let warm = |c: Rgb| c.0 > 200 && c.1 > 140 && c.2 < 140;
+        let lamps = Picture::farewell().spots((240, 100, 284, 142), 4, warm);
+        assert!((5..=40).contains(&lamps.len()), "{} lamps", lamps.len());
     }
 
     #[test]

@@ -174,6 +174,10 @@ fn main() {
 
     r.draw_end(&mut s, 27, 33, 2.0);
     save(&s, "end");
+    r.draw_onward(&mut s, 1.0);
+    save(&s, "onward");
+    r.draw_farewell(&mut s, 1.0);
+    save(&s, "farewell");
 
     // Audio, to listen to without starting the game.
     let wav = |name: &str, pcm: &[f32]| {

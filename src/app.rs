@@ -30,6 +30,10 @@ enum Mode {
     Intro,
     Play,
     End,
+    /// "Onward!": the teaser for episode two, after the ending.
+    Onward,
+    /// "Farewell!": shown when leaving from the title.
+    Farewell,
 }
 
 /// Where the framebuffer sits in the window.
@@ -141,6 +145,8 @@ pub struct Cheese {
     options: Options,
     /// Which episode's intro card is showing (1-based).
     intro_episode: usize,
+    /// The farewell is a cheese-mode preview: return to the level menu instead of quitting.
+    farewell_preview: bool,
     /// Seconds on the title screen, which times the lightning and its thunder.
     title_t: f32,
     music: Music,
@@ -318,18 +324,20 @@ impl Cheese {
         self.mode = Mode::Play;
     }
 
-    fn update_title(&mut self, ctx: &mut Context, it: &Intent, dt: f32) {
+    fn update_title(&mut self, ctx: &mut Context, dt: f32) {
         let t0 = self.title_t;
         self.title_t += dt;
         if title::struck(t0, self.title_t) {
             self.sound(&mut ctx.audio, &self.sfx.thunder, 1.0);
         }
-        if it.confirm || it.tap.is_some() {
+        // Press any key: on to the level menu. Esc too; leaving is the menu's business. M and
+        // C (mute, scanlines) are settings, so they don't count.
+        let input = &ctx.input;
+        let settings = input.key_pressed(Key::KeyM) || input.key_pressed(Key::KeyC);
+        if input.any_pressed() && !settings {
             self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
             self.cursor = self.first_unsolved();
             self.goto_select();
-        } else if it.back && !cfg!(target_arch = "wasm32") {
-            ctx.quit();
         }
     }
 
@@ -358,8 +366,9 @@ impl Cheese {
         }
         if play {
             if self.cursor >= n {
-                self.order = true;
-                self.sound(&mut ctx.audio, &self.sfx.fanfare, 0.7);
+                // A locked episode: its title card first, then the nag.
+                self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
+                self.show_intro(self.cursor - n + 2);
             } else if self.cursor < self.unlocked() {
                 self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
                 if self.cursor == 0 {
@@ -372,12 +381,35 @@ impl Cheese {
                 self.sound(&mut ctx.audio, &self.sfx.nope, 1.0);
             }
         } else if it.back {
-            self.goto_title();
+            // Leaving: the farewell, then the game closes.
+            self.mode = Mode::Farewell;
+            self.farewell_preview = false;
+            self.end_t = 0.0;
         } else if self.options.cheese && ctx.input.key_pressed(Key::KeyI) {
             self.show_intro(1);
         } else if self.options.cheese && ctx.input.key_pressed(Key::KeyE) {
             self.mode = Mode::End;
             self.end_t = 0.0;
+        } else if self.options.cheese && ctx.input.key_pressed(Key::KeyF) {
+            self.mode = Mode::Farewell;
+            self.farewell_preview = true;
+            self.end_t = 0.0;
+        }
+    }
+
+    /// Farewell: any key (or waiting) closes the game. The web has nothing to close, so
+    /// there it returns to the title.
+    fn update_farewell(&mut self, ctx: &mut Context, it: &Intent, dt: f32) {
+        self.end_t += dt;
+        let pressed = it.confirm || it.back || it.tap.is_some() || it.dir.is_some();
+        if (self.end_t > 0.6 && pressed) || self.end_t > render::farewell::LINGER {
+            if self.farewell_preview {
+                self.goto_select();
+            } else if cfg!(target_arch = "wasm32") {
+                self.goto_title();
+            } else {
+                ctx.quit();
+            }
         }
     }
 
@@ -401,11 +433,12 @@ impl Cheese {
             self.show_intro(self.intro_episode % render::intro::EPISODES + 1);
             self.sound(&mut ctx.audio, &self.sfx.menu, 0.6);
         } else if self.end_t > 0.4 && (it.confirm || it.tap.is_some()) {
-            self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
             if self.intro_episode == 1 {
+                self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
                 self.start_level(0);
             } else {
-                // Later episodes are "registered version only": straight to the order form.
+                // Later episodes are "registered version only": on to the order form.
+                self.sound(&mut ctx.audio, &self.sfx.fanfare, 0.7);
                 self.goto_select();
                 self.cursor = self.levels.len() + self.intro_episode - 2;
                 self.order = true;
@@ -605,9 +638,25 @@ impl Cheese {
 
     fn update_end(&mut self, ctx: &mut Context, it: &Intent, dt: f32) {
         self.end_t += dt;
-        if self.end_t > 1.0 && (it.confirm || it.back || it.tap.is_some()) {
+        if it.back {
+            self.goto_select();
+        } else if self.end_t > 1.0 && (it.confirm || it.tap.is_some()) {
+            self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
+            self.mode = Mode::Onward;
+            self.end_t = 0.0;
+        }
+    }
+
+    /// Onward... to the order form, since episode two is "registered version only".
+    fn update_onward(&mut self, ctx: &mut Context, it: &Intent, dt: f32) {
+        self.end_t += dt;
+        if it.back {
+            self.goto_select();
+        } else if self.end_t > 0.6 && (it.confirm || it.tap.is_some()) {
             self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
             self.goto_select();
+            self.cursor = self.levels.len();
+            self.order = true;
         }
     }
 
@@ -637,6 +686,7 @@ impl Game for Cheese {
             t: 0.0,
             options,
             intro_episode: 1,
+            farewell_preview: false,
             title_t: 0.0,
             music: Music {
                 volume: ROCK_VOLUME,
@@ -688,11 +738,13 @@ impl Game for Cheese {
         }
         let it = self.read_intent(&ctx.input, dt);
         match self.mode {
-            Mode::Title => self.update_title(ctx, &it, dt),
+            Mode::Title => self.update_title(ctx, dt),
             Mode::Select => self.update_select(ctx, &it),
             Mode::Play => self.update_play(ctx, &it, dt),
             Mode::Intro => self.update_intro(ctx, &it, dt),
             Mode::End => self.update_end(ctx, &it, dt),
+            Mode::Onward => self.update_onward(ctx, &it, dt),
+            Mode::Farewell => self.update_farewell(ctx, &it, dt),
         }
         if !self.paused {
             self.fx.update(dt);
@@ -700,7 +752,7 @@ impl Game for Cheese {
         let tune = match self.mode {
             Mode::Title | Mode::Select | Mode::Intro => Tune::Rock,
             Mode::Play => Tune::Minuet,
-            Mode::End => Tune::Extro,
+            Mode::End | Mode::Onward | Mode::Farewell => Tune::Extro,
         };
         // The music stops for the defeat card.
         let defeated = self.mode == Mode::Play
@@ -759,6 +811,8 @@ impl Game for Cheese {
                 self.renderer
                     .draw_intro(&mut self.screen, self.intro_episode, self.end_t)
             }
+            Mode::Onward => self.renderer.draw_onward(&mut self.screen, self.end_t),
+            Mode::Farewell => self.renderer.draw_farewell(&mut self.screen, self.end_t),
             Mode::End => {
                 let earned: u32 = self
                     .levels
@@ -813,9 +867,16 @@ pub fn config() -> AppConfig {
         title: "Cheesed!".into(),
         width: (W * 4) as u32,
         height: (H * 4) as u32,
-        asset_root: asset_root!(),
+        // Everything is generated in code or embedded with `include_bytes!`: no asset files,
+        // so there's no assets/ folder. Natively point the (unused) root at the working
+        // directory, which always exists, instead of warning about a missing folder.
+        asset_root: if cfg!(target_arch = "wasm32") {
+            asset_root!()
+        } else {
+            ".".into()
+        },
         canvas_id: Some(CANVAS_ID.into()),
-        // Everything is generated in code: no asset files to fetch.
+        // Nothing to fetch on the web either.
         web_preload: Some(Vec::new()),
         ..Default::default()
     }

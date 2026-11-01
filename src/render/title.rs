@@ -66,7 +66,7 @@ pub fn draw(s: &mut Screen, cover: &Picture, t: f32) {
     }
 
     if blink(t) {
-        let msg = "PRESS SPACE";
+        let msg = "PRESS ANY KEY";
         let w = Font::Tiny.measure(msg, 1);
         let (x, y) = (W - w - 6, H - 9);
         s.blend_rect(x - 3, y - 2, w + 6, 9, pal::INK, 0.7);

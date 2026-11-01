@@ -318,11 +318,18 @@ See README.md for the rules. Sister project of `../cookie-doh` (same architectur
   Geometry traps: cheese next to an outer wall can't leave it; brie needs a backstop behind
   its hole; a wheel needs run-up + push spot + wheel in a straight line.
 - Testing mode: `--cheese` (web: `?cheese`, `task run:cheese`) unlocks every level; in the
-  level menu `I` opens the episode intro card (`I` again flips through episodes 2 and 3, baked
+  level menu `I` opens the episode intro card, `F` the farewell, (`I` again flips through episodes 2 and 3, baked
   in for the nonexistent registered version) and `E` the ending (`platform::Options`).
 - `--reset` (web: `?reset`, `task run:reset`) wipes saved progress at launch and toasts
   "PROGRESS RESET"; combine with `--cheese` as needed. On the web it wipes on every load
   while the query is in the URL.
+- Title: any key (but M/C) goes to the level menu. Esc in the level menu shows "Farewell!" (`art/farewell.png`; `tools/cover.py` crops anything
+  wider than 16:10); any key or `farewell::LINGER` s later the game quits (web: back to the
+  title). Cheese mode previews it with `F` in the level menu (returns to the menu, never quits).
+- Picking a locked episode in the level menu shows its title card, then Space opens the
+  order form (the shareware nag).
+- After the ending, Space shows the "Onward!" teaser (`art/onward-episode-1.png`,
+  `render/onward.rs`); Space there opens the order form for episode 2.
 - Episode flow: starting level 1 from the menu shows the intro card (`art/intro-episode-1.png`,
   still over the title rock); Space starts the level and the music box takes over.
 - Board limit: 20x11 tiles (`render::MAX_COLS` / `MAX_ROWS`).
