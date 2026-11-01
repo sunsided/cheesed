@@ -4,6 +4,18 @@ version: '3'
 vars:
   PROFILE: '{{ .PROFILE | default "debug" }}'
   PROFILE_FLAG: '{{ if eq .PROFILE "release" }}--release{{ end }}'
+  # Where `web:export` copies the browser build (e.g. a SvelteKit app's static/cheesed).
+  DEST: '{{ .DEST | default "" }}'
+  # A level pack for `solve` (default: the built-in levels).
+  FILE: '{{ .FILE | default "" }}'
+  # The crate version, for release archives and tags.
+  VERSION:
+    sh: grep -m1 '^version' Cargo.toml | cut -d'"' -f2
+  # The release build for the browser lives here (not dist/, so a running `task web`
+  # doesn't clobber it, and vice versa).
+  WEB_RELEASE: target/web-release
+  # Release archives, named like the ones the release workflow publishes.
+  PKG_DIR: dist-release
 
 tasks:
   default:
@@ -13,55 +25,156 @@ tasks:
 
   setup:
     desc: Install the wasm target, trunk and cargo-about (skips what's already there)
+    preconditions: &cargo
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
     cmds:
       - rustup target add wasm32-unknown-unknown
       - sh -c 'command -v trunk >/dev/null || cargo install trunk --locked'
       - sh -c 'command -v cargo-about >/dev/null || cargo install cargo-about --locked --features cli'
 
+  # ---- Run -----------------------------------------------------------------------------
+
   run:
     desc: Run the game (PROFILE=debug|release)
-    preconditions:
-      - sh: command -v cargo
-        msg: "cargo not found — install Rust from https://rustup.rs/"
+    preconditions: *cargo
     cmds:
       - cargo run {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
 
   run:cheese:
-    desc: Run in testing mode (all levels unlocked; level menu I = episode intro, E = ending)
+    desc: Run in testing mode (all levels unlocked; level menu I = episode cards, E = ending, F = farewell)
     aliases: [cheese]
+    preconditions: *cargo
     cmds:
       - cargo run {{.PROFILE_FLAG}} -- --cheese {{.CLI_ARGS}}
 
   run:reset:
     desc: Run with all saved progress wiped first (test level progression from scratch)
     aliases: [reset]
+    preconditions: *cargo
     cmds:
       - cargo run {{.PROFILE_FLAG}} -- --reset {{.CLI_ARGS}}
 
+  # ---- Build and test ------------------------------------------------------------------
+
   build:
     desc: Build (PROFILE=debug|release)
+    preconditions: *cargo
     cmds:
       - cargo build {{.PROFILE_FLAG}} {{.CLI_ARGS}}
 
   test:
-    desc: Run tests (includes solving every level)
+    desc: Run tests (includes solving every level at par)
+    preconditions: *cargo
     cmds:
       - cargo test {{.CLI_ARGS}}
 
+  fmt:
+    desc: Format sources
+    aliases: [format]
+    preconditions: *cargo
+    cmds:
+      - cargo fmt --all
+
+  fmt:check:
+    desc: Check formatting without changing anything
+    preconditions: *cargo
+    cmds:
+      - cargo fmt --all --check
+
+  lint:
+    desc: Clippy for the native target (warnings as errors)
+    preconditions: *cargo
+    cmds:
+      - cargo clippy --all-targets -- -D warnings
+
+  lint:wasm:
+    desc: Clippy for the browser target (wasm32-unknown-unknown, warnings as errors)
+    aliases: [check:wasm]
+    preconditions: &wasm
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
+      - sh: rustup target list --installed | grep -qx wasm32-unknown-unknown
+        msg: "wasm target missing — run: task setup (or rustup target add wasm32-unknown-unknown)"
+    cmds:
+      - cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
+
+  lint:fix:
+    desc: Apply clippy's suggestions (also on uncommitted changes), then format
+    aliases: [fix]
+    preconditions: *cargo
+    cmds:
+      - cargo clippy --all-targets --fix --allow-dirty --allow-staged
+      - cargo fmt --all
+
+  check:
+    desc: All static checks - format, clippy native and wasm
+    cmds:
+      - task: fmt:check
+      - task: lint
+      - task: lint:wasm
+
+  ci:
+    desc: What CI runs on every push and pull request (.github/workflows/ci.yml)
+    preconditions: *wasm
+    cmds:
+      - cargo fmt --all --check
+      - cargo clippy --locked --all-targets -- -D warnings
+      - cargo clippy --locked --target wasm32-unknown-unknown --all-targets -- -D warnings
+      - cargo test --locked
+
+  docs:
+    desc: Build the API docs, private items included (that's where the explanations are)
+    preconditions: *cargo
+    env:
+      RUSTDOCFLAGS: -D warnings
+    cmds:
+      - cargo doc --no-deps --document-private-items
+
+  docs:open:
+    desc: Build the API docs and open them in a browser
+    preconditions: *cargo
+    cmds:
+      - cargo doc --no-deps --document-private-items --open
+
+  clean:
+    desc: Remove build output, browser builds, release archives and snapshots
+    preconditions: *cargo
+    cmds:
+      - cargo clean
+      - rm -rf dist {{.PKG_DIR}} snapshots
+
+  # ---- Content tools -------------------------------------------------------------------
+
   solve:
     desc: Solve the built-in levels (or FILE=levels.txt) and print the optimal move counts
+    preconditions: *cargo
     cmds:
       - cargo run -q --release --example solve -- {{.FILE}}
 
   snapshot:
-    desc: Render every screen and level to PNG in snapshots/ (no window)
+    desc: Render every screen and level to PNG, plus the music as WAV, in snapshots/ (no window)
+    preconditions: *cargo
     cmds:
       - cargo run -q --release --example snapshot -- snapshots
 
   cover:
     desc: Re-convert the paintings in art/ into the embedded 256-color pictures (needs Pillow)
+    preconditions:
+      - sh: python3 -c 'import PIL'
+        msg: "Pillow not found — install it, e.g. pip install Pillow (or your distro's python3-pil)"
+      - sh: test -f art/cover.png && test -f art/farewell.png
+        msg: "source paintings missing in art/ — they are kept out of git; copy them there first"
     sources: [art/*.png, tools/cover.py]
-    generates: [src/render/cover.bin, src/render/intro1.bin, src/render/intro2.bin, src/render/intro3.bin, src/render/victory.bin, src/render/defeat.bin, src/render/onward.bin, src/render/farewell.bin]
+    generates:
+      - src/render/cover.bin
+      - src/render/intro1.bin
+      - src/render/intro2.bin
+      - src/render/intro3.bin
+      - src/render/victory.bin
+      - src/render/defeat.bin
+      - src/render/onward.bin
+      - src/render/farewell.bin
     cmds:
       - python3 tools/cover.py art/cover.png src/render/cover.bin
       - python3 tools/cover.py art/intro-episode-1.png src/render/intro1.bin
@@ -73,53 +186,98 @@ tasks:
       - python3 tools/cover.py art/farewell.png src/render/farewell.bin
       - rm -f src/render/*.preview.png
 
-  fmt:
-    desc: Format sources
-    aliases: [format]
-    cmds:
-      - cargo fmt --all
-
-  lint:
-    desc: Clippy (warnings as errors)
-    cmds:
-      - cargo clippy --all-targets -- -D warnings
-
-  check:
-    desc: Format check + clippy
-    cmds:
-      - cargo fmt --all --check
-      - cargo clippy --all-targets -- -D warnings
-
-  check:wasm:
-    desc: Clippy for the browser target (wasm32-unknown-unknown)
-    preconditions:
-      - sh: rustup target list --installed | grep -qx wasm32-unknown-unknown
-        msg: "wasm target missing — run: rustup target add wasm32-unknown-unknown"
-    cmds:
-      - cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
-
   licenses:
     desc: Regenerate THIRD_PARTY_LICENSES.html (notices for every bundled dependency)
     preconditions:
       - sh: command -v cargo-about
-        msg: "cargo-about not found — run: cargo install cargo-about --locked --features cli"
+        msg: "cargo-about not found — run: task setup (or cargo install cargo-about --locked --features cli)"
     sources: [Cargo.lock, about.toml, about.hbs]
     generates: [THIRD_PARTY_LICENSES.html]
     cmds:
       - cargo about generate about.hbs -o THIRD_PARTY_LICENSES.html
 
+  # ---- Browser ---------------------------------------------------------------------------
+
   web:
     desc: Run in the browser with live rebuild at http://localhost:8080 (needs trunk)
-    preconditions: &web-preconditions
+    aliases: [dev]
+    preconditions: &web
       - sh: command -v trunk
-        msg: "trunk not found — run: cargo install trunk --locked"
+        msg: "trunk not found — run: task setup (or cargo install trunk --locked)"
       - sh: rustup target list --installed | grep -qx wasm32-unknown-unknown
-        msg: "wasm target missing — run: rustup target add wasm32-unknown-unknown"
+        msg: "wasm target missing — run: task setup (or rustup target add wasm32-unknown-unknown)"
     cmds:
       - trunk serve {{.PROFILE_FLAG}} {{.CLI_ARGS}}
 
   web:build:
-    desc: Build for the browser into dist/ (PROFILE=release, then zip dist/ for itch.io)
-    preconditions: *web-preconditions
+    desc: Build for the browser into dist/ (PROFILE=release for the optimized build)
+    preconditions: *web
     cmds:
       - trunk build {{.PROFILE_FLAG}} {{.CLI_ARGS}}
+
+  web:release:
+    desc: Optimized browser build into target/web-release (what Pages and embeds get)
+    preconditions: *web
+    cmds:
+      - trunk build --release --locked --dist {{.WEB_RELEASE}}
+
+  web:preview:
+    desc: Serve the optimized browser build at http://localhost:8081, as GitHub Pages would
+    preconditions:
+      - sh: command -v python3
+        msg: "python3 not found — needed for the static file server"
+    deps: [web:release]
+    cmds:
+      - echo "Serving {{.WEB_RELEASE}} at http://localhost:8081/ (Ctrl+C to stop)"
+      - python3 -m http.server 8081 --directory {{.WEB_RELEASE}}
+
+  web:export:
+    desc: Optimized browser build copied to DEST for embedding (e.g. DEST=../my-site/static/cheesed)
+    requires:
+      vars: [DEST]
+    deps: [web:release]
+    cmds:
+      - mkdir -p "{{.DEST}}"
+      - cp {{.WEB_RELEASE}}/cheese.js {{.WEB_RELEASE}}/cheese_bg.wasm {{.WEB_RELEASE}}/THIRD_PARTY_LICENSES.html "{{.DEST}}/"
+      - echo "Exported to {{.DEST}} - embed with embed/Cheesed.svelte (base = its URL path)"
+
+  # ---- Release ---------------------------------------------------------------------------
+
+  package:
+    desc: Build the release archives locally into dist-release/ (Linux binary + web zip), like the release workflow
+    deps: [web:release]
+    preconditions:
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
+      - sh: command -v zip
+        msg: "zip not found — install it with your package manager"
+    vars:
+      TAG: 'v{{.VERSION}}'
+    cmds:
+      - cargo build --release --locked
+      - rm -rf {{.PKG_DIR}} && mkdir -p {{.PKG_DIR}}/cheesed-{{.TAG}}-linux-x86_64
+      - cp target/release/cheese LICENSE README.md THIRD_PARTY_LICENSES.html {{.PKG_DIR}}/cheesed-{{.TAG}}-linux-x86_64/
+      - tar -C {{.PKG_DIR}} -czf {{.PKG_DIR}}/cheesed-{{.TAG}}-linux-x86_64.tar.gz cheesed-{{.TAG}}-linux-x86_64
+      - rm -rf {{.PKG_DIR}}/cheesed-{{.TAG}}-linux-x86_64
+      - (cd {{.WEB_RELEASE}} && zip -q -r -9 "{{.ROOT_DIR}}/{{.PKG_DIR}}/cheesed-{{.TAG}}-web.zip" .)
+      - (cd {{.PKG_DIR}} && sha256sum * > SHA256SUMS)
+      - ls -la {{.PKG_DIR}}
+
+  release:
+    desc: Tag v<Cargo.toml version> and push the tag, which runs the release workflow (asks first)
+    vars:
+      TAG: 'v{{.VERSION}}'
+    preconditions:
+      - sh: test -z "$(git status --porcelain)"
+        msg: "working tree not clean — commit or stash first"
+      - sh: test "$(git rev-parse --abbrev-ref HEAD)" = main
+        msg: "not on main — releases are tagged from main"
+      - sh: '! git rev-parse -q --verify "refs/tags/{{.TAG}}" >/dev/null'
+        msg: "tag {{.TAG}} already exists — bump the version in Cargo.toml first"
+      - sh: git fetch -q origin main && test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+        msg: "main is not in sync with origin/main — push or pull first"
+    prompt: "Tag {{.TAG}} and push it? This builds and publishes the release and deploys GitHub Pages."
+    cmds:
+      - task: ci
+      - git tag -a {{.TAG}} -m "Cheesed! {{.TAG}}"
+      - git push origin {{.TAG}}
