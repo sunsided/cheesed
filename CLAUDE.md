@@ -320,6 +320,9 @@ See README.md for the rules. Sister project of `../cookie-doh` (same architectur
 - Testing mode: `--cheese` (web: `?cheese`, `task run:cheese`) unlocks every level; in the
   level menu `I` opens the episode intro card (`I` again flips through episodes 2 and 3, baked
   in for the nonexistent registered version) and `E` the ending (`platform::Options`).
+- `--reset` (web: `?reset`, `task run:reset`) wipes saved progress at launch and toasts
+  "PROGRESS RESET"; combine with `--cheese` as needed. On the web it wipes on every load
+  while the query is in the URL.
 - Episode flow: starting level 1 from the menu shows the intro card (`art/intro-episode-1.png`,
   still over the title rock); Space starts the level and the music box takes over.
 - Board limit: 20x11 tiles (`render::MAX_COLS` / `MAX_ROWS`).

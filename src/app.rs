@@ -591,6 +591,7 @@ impl Game for Cheese {
             .create_texture_rgba(W as u32, H as u32, &rgba, Some("framebuffer"));
         let (ww, wh) = ctx.gfx.size();
         let levels = levels();
+        let options = Options::load();
         Ok(Self {
             screen: Screen::new(),
             rgba,
@@ -599,7 +600,7 @@ impl Game for Cheese {
             viewport: Viewport::fit(ww, wh),
             mode: Mode::Title,
             t: 0.0,
-            options: Options::load(),
+            options,
             intro_episode: 1,
             title_t: 0.0,
             music: Music {
@@ -607,7 +608,12 @@ impl Game for Cheese {
                 ..Default::default()
             },
             levels,
-            progress: Progress::load(),
+            progress: if options.reset {
+                Progress::wipe();
+                Progress::default()
+            } else {
+                Progress::load()
+            },
             cursor: 0,
             world: World::new(Arc::clone(&levels[0])),
             anim: None,
@@ -622,7 +628,7 @@ impl Game for Cheese {
             sfx: sfx::Bank::new(),
             muted: false,
             scanlines: true,
-            toast: None,
+            toast: options.reset.then(|| ("PROGRESS RESET".to_string(), 2.5)),
         })
     }
 

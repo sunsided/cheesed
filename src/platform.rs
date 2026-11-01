@@ -9,23 +9,28 @@ use std::collections::HashMap;
 
 use crate::logic::Level;
 
-/// Launch options: `--cheese` natively, `?cheese` in the browser.
+/// Launch options: `--cheese --reset` natively, `?cheese&reset` in the browser.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Options {
     /// Testing mode: every level unlocked, and the level menu can jump to the episode
     /// intro (`I`) and ending (`E`).
     pub cheese: bool,
+    /// Wipe saved progress at launch, to test level progression from scratch.
+    pub reset: bool,
 }
 
 impl Options {
-    /// Parse flags or query pairs (`--cheese`, `cheese`, `cheese=1`).
+    /// Parse flags or query pairs (`--cheese`, `cheese`, `cheese=1`, `--reset`).
     pub fn parse<'a>(args: impl IntoIterator<Item = &'a str>) -> Self {
         let mut o = Options::default();
         for arg in args {
             let arg = arg.trim_start_matches('-');
             let (key, value) = arg.split_once('=').unwrap_or((arg, ""));
+            let on = !matches!(value, "0" | "false" | "no");
             if key.eq_ignore_ascii_case("cheese") {
-                o.cheese = !matches!(value, "0" | "false" | "no");
+                o.cheese = on;
+            } else if key.eq_ignore_ascii_case("reset") {
+                o.reset = on;
             }
         }
         o
@@ -78,6 +83,11 @@ impl Progress {
     pub fn save(&self) {
         imp::save(&self.serialize());
     }
+
+    /// Forget all saved progress, on disk or in the browser.
+    pub fn wipe() {
+        imp::wipe();
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -95,6 +105,15 @@ mod imp {
 
     pub fn load() -> Option<String> {
         std::fs::read_to_string(path()?).ok()
+    }
+
+    pub fn wipe() {
+        if let Some(p) = path()
+            && let Err(e) = std::fs::remove_file(&p)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            log::warn!("reset progress at {}: {e}", p.display());
+        }
     }
 
     pub fn save(data: &str) {
@@ -127,6 +146,12 @@ mod imp {
         storage()?.get_item(KEY).ok()?
     }
 
+    pub fn wipe() {
+        if let Some(s) = storage() {
+            let _ = s.remove_item(KEY);
+        }
+    }
+
     pub fn save(data: &str) {
         if let Some(s) = storage() {
             let _ = s.set_item(KEY, data);
@@ -145,6 +170,9 @@ mod tests {
         assert!(!Options::parse(["cheese=0"]).cheese);
         assert!(!Options::parse(["--cheesy"]).cheese);
         assert!(!Options::parse([]).cheese);
+        let both = Options::parse(["--cheese", "--reset"]);
+        assert!(both.cheese && both.reset);
+        assert!(!Options::parse(["--cheese"]).reset);
     }
 
     #[test]

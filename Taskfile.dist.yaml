@@ -32,6 +32,12 @@ tasks:
     cmds:
       - cargo run {{.PROFILE_FLAG}} -- --cheese {{.CLI_ARGS}}
 
+  run:reset:
+    desc: Run with all saved progress wiped first (test level progression from scratch)
+    aliases: [reset]
+    cmds:
+      - cargo run {{.PROFILE_FLAG}} -- --reset {{.CLI_ARGS}}
+
   build:
     desc: Build (PROFILE=debug|release)
     cmds:
