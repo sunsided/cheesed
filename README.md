@@ -36,6 +36,29 @@ task test
 Plain `cargo run` works too. Your progress is saved in your data directory natively, and in
 the browser's local storage on the web.
 
+## On your own site
+
+`task web:export DEST=../my-site/static/cheesed` copies a release build (`cheese.js`,
+`cheese_bg.wasm` and the license notices) wherever you like; it uses relative paths, so it
+works from any URL path. For SvelteKit, drop in [`embed/Cheesed.svelte`](embed/Cheesed.svelte):
+
+```svelte
+<Cheesed onexit={() => goto('/games')} oncomplete={(r) => console.log(r.stars, r.max)} />
+```
+
+Without Svelte, create a `<canvas id="cheese" tabindex="0">` yourself, then
+`import('/cheesed/cheese.js').then((m) => m.default())`. The game talks to the page through
+DOM events on that canvas (and `postMessage` when it runs in an iframe):
+
+| Event | When | `detail` |
+|---|---|---|
+| `cheese:start` | the player starts a level | `{ level }` |
+| `cheese:complete` | the player reaches the end of the episode | `{ stars, max }` |
+| `cheese:exit` | the player leaves; the game goes quiet until a key press | |
+
+Dispatching `cheese:restart` on the canvas starts over at the title, keeping saved progress.
+While the canvas is detached from the page, the game pauses and goes silent.
+
 ## How it's made
 
 It's the sister project of [Cookie D'oh!](https://github.com/sunsided/cookie-doh) and borrows

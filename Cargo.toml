@@ -18,7 +18,23 @@ env_logger = "0.11"
 dirs = "6"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3", features = ["Window", "Storage", "Location"] }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Storage",
+    "Location",
+    "Document",
+    "Element",
+    "EventTarget",
+    "Event",
+    "CustomEvent",
+    "CustomEventInit",
+    "MessageEvent",
+    "Navigator",
+    "AudioContext",
+    "AudioContextState",
+] }
 
 # Optimize dependencies even in dev builds; our own code still compiles fast.
 [profile.dev.package."*"]

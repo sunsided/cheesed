@@ -115,8 +115,10 @@ const STARS: [(i32, i32); 16] = [
 /// corner (246, 10) gets a [`flare`]; the raised cheese's glints hop between (182, 54),
 /// (214, 62) and (194, 70); the giant cat's eyes are at (84, 56) and (113, 70). While
 /// [`lightning`] is on, the whole screen is tinted 16% towards a pale violet (`#d8c8ff`).
-/// The blinking prompt sits in the bottom-right corner on a dark plate.
-pub fn draw(s: &mut Screen, cover: &Picture, t: f32) {
+/// The blinking prompt sits in the bottom-right corner on a dark plate: "PRESS ANY KEY",
+/// or "CLICK FOR SOUND" while `need_sound` (a browser that hasn't unlocked audio yet; the
+/// first press then only switches the sound on).
+pub fn draw(s: &mut Screen, cover: &Picture, t: f32, need_sound: bool) {
     cover.draw(s, t);
     let (ox, oy) = cover.origin();
 
@@ -134,7 +136,11 @@ pub fn draw(s: &mut Screen, cover: &Picture, t: f32) {
     }
 
     if blink(t) {
-        let msg = "PRESS ANY KEY";
+        let msg = if need_sound {
+            "CLICK FOR SOUND"
+        } else {
+            "PRESS ANY KEY"
+        };
         let w = Font::Tiny.measure(msg, 1);
         let (x, y) = (W - w - 6, H - 9);
         s.blend_rect(x - 3, y - 2, w + 6, 9, pal::INK, 0.7);

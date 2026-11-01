@@ -872,9 +872,10 @@ impl Renderer {
 
     // ---- Title and ending --------------------------------------------------------------
 
-    /// The title screen; `t` is seconds since it appeared.
-    pub fn draw_title(&self, s: &mut Screen, t: f32) {
-        title::draw(s, &self.cover, t);
+    /// The title screen; `t` is seconds since it appeared. With `need_sound` the prompt
+    /// asks for a click to switch the sound on (see [`title::draw`]).
+    pub fn draw_title(&self, s: &mut Screen, t: f32, need_sound: bool) {
+        title::draw(s, &self.cover, t, need_sound);
     }
 
     /// The card before an episode's first level (`episode` is 1-based and clamped to the

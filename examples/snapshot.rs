@@ -66,7 +66,7 @@ fn main() {
     }
     save(&s, "sprites");
 
-    r.draw_title(&mut s, 1.3);
+    r.draw_title(&mut s, 1.3, false);
     save(&s, "title");
 
     let best: Vec<Option<u32>> = levels()

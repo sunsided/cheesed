@@ -54,7 +54,7 @@ use game_toolkit::prelude::*;
 
 use crate::gfx::{H, Screen, W};
 use crate::logic::{CheeseKind, Dir, Event, Level, Pos, Status, World, levels, stars};
-use crate::platform::{Options, Progress};
+use crate::platform::{self, HostCommand, HostEvent, Options, Progress};
 use crate::render::anim::Anim;
 use crate::render::fx::Fx;
 use crate::render::title;
@@ -268,6 +268,20 @@ pub struct Cheese {
     intro_episode: usize,
     /// The farewell is a cheese-mode preview: return to the level menu instead of quitting.
     farewell_preview: bool,
+    /// Audio was running last frame. On the web the toolkit starts audio during the very
+    /// press that unlocks it, so "is it running now" alone can't tell an unlocking press
+    /// from a later one; comparing with the previous frame can.
+    sound_was_on: bool,
+    /// A title press was already spent on unlocking audio, so the next one goes on even if
+    /// the browser never let the sound start (a muted tab, a strict autoplay policy).
+    unlock_press_spent: bool,
+    /// Web only: the player left (after the farewell) and the page got `cheese:exit`. The
+    /// game stays frozen and silent behind a "come back" note until the player presses
+    /// something, then starts over at the title.
+    dormant: bool,
+    /// Audio is muted because the host has the game hidden (dormant, or its canvas detached
+    /// from the page). Separate from the player's own mute (`M`).
+    host_muted: bool,
     /// Seconds on the title screen, which times the lightning and its thunder.
     title_t: f32,
     /// The background music stream.
@@ -505,6 +519,9 @@ impl Cheese {
     /// Start level `i` from scratch and switch to [`Mode::Play`]: a fresh [`World`] (and so
     /// an empty undo history), and every per-level bit of presentation state cleared.
     fn start_level(&mut self, i: usize) {
+        platform::notify(HostEvent::Start {
+            level: i as u32 + 1,
+        });
         self.cursor = i;
         self.world = World::new(Arc::clone(&self.levels[i]));
         self.anim = None;
@@ -542,13 +559,26 @@ impl Cheese {
         }
         // Press any key: on to the level menu. Esc too; leaving is the menu's business. M and
         // C (mute, scanlines) are settings, so they don't count.
+        //
+        // In a browser, audio may only start after a user gesture. While it hasn't, the
+        // first press only switches the sound on (the toolkit starts audio on that very
+        // press) and restarts the title, so thunder and music play from the top; the next
+        // press goes on. With audio already running (natively, or a page that had a
+        // gesture before) or no audio device at all, the first press goes on directly.
+        let sound_on = ctx.audio.as_ref().is_none_or(Audio::is_started);
         let input = &ctx.input;
         let settings = input.key_pressed(Key::KeyM) || input.key_pressed(Key::KeyC);
         if input.any_pressed() && !settings {
-            self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
-            self.cursor = self.first_unsolved();
-            self.goto_select();
+            if (self.sound_was_on && sound_on) || self.unlock_press_spent {
+                self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
+                self.cursor = self.first_unsolved();
+                self.goto_select();
+            } else {
+                self.unlock_press_spent = true;
+                self.title_t = 0.0;
+            }
         }
+        self.sound_was_on = sound_on;
     }
 
     /// Level menu.
@@ -635,10 +665,14 @@ impl Cheese {
         if (self.end_t > 0.6 && pressed) || self.end_t > render::farewell::LINGER {
             if self.farewell_preview {
                 self.goto_select();
-            } else if cfg!(target_arch = "wasm32") {
-                self.goto_title();
             } else {
-                ctx.quit();
+                platform::notify(HostEvent::Exit);
+                // There is no window to close on the web: go quiet until the player is back.
+                if cfg!(target_arch = "wasm32") {
+                    self.dormant = true;
+                } else {
+                    ctx.quit();
+                }
             }
         }
     }
@@ -738,6 +772,10 @@ impl Cheese {
                 } else {
                     self.mode = Mode::End;
                     self.end_t = 0.0;
+                    platform::notify(HostEvent::Complete {
+                        stars: self.earned_stars(),
+                        max: self.levels.len() as u32 * 3,
+                    });
                 }
                 return;
             }
@@ -959,8 +997,80 @@ impl Cheese {
     /// ducking do not interfere.
     fn apply_volume(&self, ctx: &mut Context) {
         if let Some(a) = &mut ctx.audio {
-            a.set_master_volume(if self.muted { 0.0 } else { 1.0 });
+            let silent = self.muted || self.host_muted;
+            a.set_master_volume(if silent { 0.0 } else { 1.0 });
         }
+    }
+
+    /// Mute while the host has the game hidden, without touching the player's own mute.
+    fn set_host_muted(&mut self, ctx: &mut Context, muted: bool) {
+        if self.host_muted != muted {
+            self.host_muted = muted;
+            self.apply_volume(ctx);
+        }
+    }
+
+    /// Stars earned over all levels, from the saved best move counts.
+    fn earned_stars(&self) -> u32 {
+        self.levels
+            .iter()
+            .map(|l| {
+                self.progress
+                    .best(l)
+                    .map_or(0, |b| u32::from(stars(b, l.par)))
+            })
+            .sum()
+    }
+
+    /// The host asked to start over: back to the title as if freshly launched. Saved
+    /// progress, the player's mute and scanline choices, and the unlocked audio all stay.
+    fn restart(&mut self) {
+        self.dormant = false;
+        self.paused = false;
+        self.order = false;
+        self.farewell_preview = false;
+        self.unlock_press_spent = false;
+        self.toast = None;
+        self.held = None;
+        self.fx = Fx::new();
+        // The page may have had a gesture since launch (the player clicked a button).
+        platform::probe_audio();
+        self.goto_title();
+    }
+
+    /// On the web, start audio without waiting for a key in the game when the page
+    /// already had a gesture and the browser lets it play (see [`platform::audio_allowed`]).
+    /// Otherwise the toolkit starts it on the first key press as usual.
+    fn start_audio_early(&mut self, ctx: &mut Context) {
+        if let Some(a) = &mut ctx.audio
+            && !a.is_started()
+            && platform::audio_allowed()
+            && let Err(e) = a.start()
+        {
+            log::warn!("early audio start: {e}");
+        }
+    }
+
+    /// A deliberate "I'm back" from a dormant player: a key the game uses, a click, a tap
+    /// or a gamepad button. (Modifier keys and the like don't count.)
+    fn wake_pressed(ctx: &Context) -> bool {
+        let i = &ctx.input;
+        let pad = i
+            .first_gamepad()
+            .is_some_and(|p| p.button_pressed(Button::South) || p.button_pressed(Button::Start));
+        let keys = [
+            Key::Space,
+            Key::Enter,
+            Key::Escape,
+            Key::ArrowUp,
+            Key::ArrowDown,
+            Key::ArrowLeft,
+            Key::ArrowRight,
+        ];
+        keys.iter().any(|&k| i.key_pressed(k))
+            || pad
+            || i.mouse_pressed(MouseButton::Left)
+            || !i.touches_started().is_empty()
     }
 }
 
@@ -979,6 +1089,9 @@ impl Game for Cheese {
         let (ww, wh) = ctx.gfx.size();
         let levels = levels();
         let options = Options::load();
+        // On the web, find out early whether the page's earlier gestures already unlock
+        // audio, so the title's thunder and music need not wait for a key press.
+        platform::probe_audio();
         Ok(Self {
             screen: Screen::new(),
             rgba,
@@ -990,6 +1103,10 @@ impl Game for Cheese {
             options,
             intro_episode: 1,
             farewell_preview: false,
+            sound_was_on: ctx.audio.as_ref().is_none_or(Audio::is_started),
+            unlock_press_spent: false,
+            dormant: false,
+            host_muted: false,
             title_t: 0.0,
             music: Music {
                 volume: ROCK_VOLUME,
@@ -1036,6 +1153,30 @@ impl Game for Cheese {
     /// running underneath, so the tune picks up mid-song when the volume returns rather
     /// than starting over.
     fn update(&mut self, ctx: &mut Context, dt: f32) {
+        for cmd in platform::commands() {
+            match cmd {
+                HostCommand::Restart => self.restart(),
+            }
+        }
+        self.start_audio_early(ctx);
+        // Hidden by the host (left the game, or the canvas was taken off the page): freeze
+        // and stay silent; a level in progress waits behind the pause screen.
+        if self.dormant || !platform::is_active() {
+            let woke = self.dormant && platform::is_active() && Self::wake_pressed(ctx);
+            if woke {
+                self.dormant = false;
+                self.set_host_muted(ctx, false);
+                self.goto_title();
+            } else {
+                if self.mode == Mode::Play {
+                    self.paused = true;
+                }
+                self.set_host_muted(ctx, true);
+            }
+            // The waking press only wakes.
+            return;
+        }
+        self.set_host_muted(ctx, false);
         self.t += dt;
         if ctx.input.key_pressed(Key::KeyM) {
             self.muted = !self.muted;
@@ -1106,7 +1247,12 @@ impl Game for Cheese {
     /// if a resize event was missed.
     fn render(&mut self, ctx: &mut Context, frame: &mut Frame) {
         match self.mode {
-            Mode::Title => self.renderer.draw_title(&mut self.screen, self.title_t),
+            Mode::Title => {
+                let need_sound =
+                    !ctx.audio.as_ref().is_none_or(Audio::is_started) && !self.unlock_press_spent;
+                self.renderer
+                    .draw_title(&mut self.screen, self.title_t, need_sound)
+            }
             Mode::Select => {
                 let best = self.best();
                 let view = SelectView {
@@ -1143,21 +1289,17 @@ impl Game for Cheese {
             Mode::Onward => self.renderer.draw_onward(&mut self.screen, self.end_t),
             Mode::Farewell => self.renderer.draw_farewell(&mut self.screen, self.end_t),
             Mode::End => {
-                let earned: u32 = self
-                    .levels
-                    .iter()
-                    .map(|l| {
-                        self.progress
-                            .best(l)
-                            .map_or(0, |b| u32::from(stars(b, l.par)))
-                    })
-                    .sum();
+                let earned = self.earned_stars();
                 let max = self.levels.len() as u32 * 3;
                 self.renderer
                     .draw_end(&mut self.screen, earned, max, self.end_t);
             }
         }
-        if let Some((msg, _)) = &self.toast {
+        if self.dormant {
+            self.screen
+                .blend_rect(0, 0, W, H, crate::gfx::palette::NAVY, 0.7);
+            render::toast(&mut self.screen, "SEE YOU! PRESS ANY KEY TO COME BACK");
+        } else if let Some((msg, _)) = &self.toast {
             render::toast(&mut self.screen, msg);
         }
         self.screen.to_rgba(&mut self.rgba, None);

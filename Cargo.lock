@@ -363,7 +363,9 @@ dependencies = [
  "dirs",
  "env_logger",
  "game-toolkit",
+ "js-sys",
  "log",
+ "wasm-bindgen",
  "web-sys",
 ]
 

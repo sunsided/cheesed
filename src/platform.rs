@@ -127,7 +127,79 @@ impl Progress {
     }
 }
 
-/// Native storage: a text file in the user's data directory, options from the command line.
+/// Things an embedding page may want to react to. On the web each becomes a bubbling
+/// `cheese:<name>` DOM event on the game's canvas (with the fields in `event.detail`), and
+/// a `postMessage({ type: "cheese:<name>", ... })` to the parent when the game runs in an
+/// iframe. Natively they are only logged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostEvent {
+    /// The player started a level (`level` is 1-based).
+    Start { level: u32 },
+    /// The player left the game (Esc in the level menu, after the farewell). On the web the
+    /// game then goes dormant: frozen and silent until the player comes back.
+    Exit,
+    /// The player reached the end of the episode, with this many of the possible stars.
+    Complete { stars: u32, max: u32 },
+}
+
+impl HostEvent {
+    /// The DOM event / message type for this event.
+    pub fn name(self) -> &'static str {
+        match self {
+            HostEvent::Start { .. } => "cheese:start",
+            HostEvent::Exit => "cheese:exit",
+            HostEvent::Complete { .. } => "cheese:complete",
+        }
+    }
+}
+
+/// Requests from the embedding page. On the web a `cheese:restart` DOM event on the canvas
+/// (or, in an iframe, a `postMessage({ type: "cheese:restart" })` from the parent) becomes
+/// [`HostCommand::Restart`]. Natively there is no host and none arrive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostCommand {
+    /// Start over at the title as if freshly launched, but keep the running loop, the GPU
+    /// context, saved progress and the already unlocked audio.
+    Restart,
+}
+
+impl HostCommand {
+    /// The DOM event / message type that asks for a restart.
+    pub const RESTART: &str = "cheese:restart";
+}
+
+/// Tell the embedding page what happened (see [`HostEvent`]).
+pub fn notify(event: HostEvent) {
+    imp::notify(event);
+}
+
+/// Requests from the embedding page since the last call (see [`HostCommand`]). On the web
+/// the first call also installs the listeners.
+pub fn commands() -> Vec<HostCommand> {
+    imp::commands()
+}
+
+/// Whether the game is on screen. On the web it is not while its canvas is detached from
+/// the page (the host component unmounted); the game then pauses and goes silent.
+pub fn is_active() -> bool {
+    imp::is_active()
+}
+
+/// On the web, if the page already had a user gesture, open a throwaway `AudioContext` to
+/// find out whether audio may start without another one (see [`audio_allowed`]).
+pub fn probe_audio() {
+    imp::probe_audio();
+}
+
+/// On the web, true once the probe from [`probe_audio`] is running: starting the game's
+/// audio now will be audible, so it need not wait for the first key press. Natively the
+/// audio device opens at startup and this is always false.
+pub fn audio_allowed() -> bool {
+    imp::audio_allowed()
+}
+
+/// Native storage (a text file in the user's data directory), options from the command
+/// line, and no-op stand-ins for the host-page integration.
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
     use std::path::PathBuf;
@@ -136,6 +208,29 @@ mod imp {
     pub fn options() -> super::Options {
         let args: Vec<String> = std::env::args().skip(1).collect();
         super::Options::parse(args.iter().map(String::as_str))
+    }
+
+    /// Natively there is no host page: events are only logged.
+    pub fn notify(event: super::HostEvent) {
+        log::info!("host event: {event:?}");
+    }
+
+    /// Natively no host sends commands.
+    pub fn commands() -> Vec<super::HostCommand> {
+        Vec::new()
+    }
+
+    /// Natively the game always has the window to itself.
+    pub fn is_active() -> bool {
+        true
+    }
+
+    /// Natively the audio device opens at startup; there is nothing to probe.
+    pub fn probe_audio() {}
+
+    /// Natively the audio device opens at startup; see [`super::audio_allowed`].
+    pub fn audio_allowed() -> bool {
+        false
     }
 
     /// `<data dir>/cheese/progress.txt`, where the data directory is the platform's usual
@@ -173,7 +268,9 @@ mod imp {
     }
 }
 
-/// Browser storage: one `localStorage` entry, options from the page URL's query string.
+/// Browser storage (one `localStorage` entry), options from the page URL's query string, and
+/// the host-page integration: events on the canvas and `postMessage` to a parent frame, a
+/// restart request, pausing while the canvas is detached, and an audio-unlock probe.
 #[cfg(target_arch = "wasm32")]
 mod imp {
     /// The `localStorage` key holding the serialized progress.
@@ -211,6 +308,169 @@ mod imp {
         if let Some(s) = storage() {
             let _ = s.set_item(KEY, data);
         }
+    }
+
+    use wasm_bindgen::JsValue;
+
+    /// The game's canvas, looked up by its id.
+    fn canvas() -> Option<web_sys::Element> {
+        web_sys::window()?
+            .document()?
+            .get_element_by_id(crate::app::CANVAS_ID)
+    }
+
+    /// Paused while the canvas is detached from the page (the host component unmounted).
+    pub fn is_active() -> bool {
+        canvas().is_none_or(|c| c.is_connected())
+    }
+
+    /// Dispatch the event on the canvas (bubbling, fields in `detail`) and, inside an
+    /// iframe, post it to the parent page as `{ type, ...fields }`.
+    pub fn notify(event: super::HostEvent) {
+        let detail = js_sys::Object::new();
+        let set = |k: &str, v: JsValue| {
+            let _ = js_sys::Reflect::set(&detail, &JsValue::from_str(k), &v);
+        };
+        match event {
+            super::HostEvent::Start { level } => set("level", level.into()),
+            super::HostEvent::Complete { stars, max } => {
+                set("stars", stars.into());
+                set("max", max.into());
+            }
+            super::HostEvent::Exit => {}
+        }
+        if let Some(c) = canvas() {
+            let init = web_sys::CustomEventInit::new();
+            init.set_bubbles(true);
+            init.set_detail(&detail);
+            match web_sys::CustomEvent::new_with_event_init_dict(event.name(), &init) {
+                Ok(e) => {
+                    let _ = c.dispatch_event(&e);
+                }
+                Err(e) => log::warn!("host event {}: {e:?}", event.name()),
+            }
+        }
+        if let Some(w) = web_sys::window()
+            && let Ok(Some(parent)) = w.parent()
+            && parent != w
+        {
+            set("type", JsValue::from_str(event.name()));
+            let _ = parent.post_message(&detail, "*");
+        }
+    }
+
+    thread_local! {
+        /// Host requests received since the last [`commands`] call.
+        static COMMANDS: std::cell::RefCell<Vec<super::HostCommand>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+        /// The listeners are installed (once).
+        static LISTENING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
+    /// Queue a restart request.
+    fn queue_restart() {
+        COMMANDS.with_borrow_mut(|q| q.push(super::HostCommand::Restart));
+    }
+
+    /// Listen for host requests (once): `cheese:restart` on the canvas and, inside an
+    /// iframe, a `{ type: "cheese:restart" }` message from the parent window only.
+    fn listen() {
+        use wasm_bindgen::JsCast;
+        use wasm_bindgen::closure::Closure;
+        if LISTENING.replace(true) {
+            return;
+        }
+        if let Some(c) = canvas() {
+            let on_restart =
+                Closure::<dyn FnMut(web_sys::CustomEvent)>::new(|_: web_sys::CustomEvent| {
+                    queue_restart()
+                });
+            let _ = c.add_event_listener_with_callback(
+                super::HostCommand::RESTART,
+                on_restart.as_ref().unchecked_ref(),
+            );
+            // The listener lives as long as the page: the canvas is never torn down.
+            on_restart.forget();
+        }
+        if let Some(w) = web_sys::window()
+            && let Ok(Some(parent)) = w.parent()
+            && parent != w
+        {
+            let on_message = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(
+                move |e: web_sys::MessageEvent| {
+                    let from_parent = e.source().is_some_and(|s| js_sys::Object::is(&s, &parent));
+                    let kind = js_sys::Reflect::get(&e.data(), &JsValue::from_str("type"))
+                        .ok()
+                        .and_then(|t| t.as_string());
+                    if from_parent && kind.as_deref() == Some(super::HostCommand::RESTART) {
+                        queue_restart();
+                    }
+                },
+            );
+            let _ =
+                w.add_event_listener_with_callback("message", on_message.as_ref().unchecked_ref());
+            on_message.forget();
+        }
+    }
+
+    /// Host requests since the last call; installs the listeners on first use.
+    pub fn commands() -> Vec<super::HostCommand> {
+        listen();
+        COMMANDS.with_borrow_mut(std::mem::take)
+    }
+
+    thread_local! {
+        /// A throwaway `AudioContext` and when it was made, watched by [`audio_allowed`].
+        static PROBE: std::cell::RefCell<Option<(web_sys::AudioContext, f64)>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    /// How long a probe may stay suspended before audio is left to the first key press.
+    /// A fresh context reports `suspended` at first in Firefox and WebKit and turns
+    /// `running` about 300 ms later (Chromium is `running` at once), so an early
+    /// `suspended` is no verdict.
+    const PROBE_MS: f64 = 1500.0;
+
+    /// `navigator.userActivation.hasBeenActive`: the player already interacted with this
+    /// document (for example clicked through the host page). `false` where the API is
+    /// missing.
+    fn has_been_active() -> bool {
+        let Some(nav) = web_sys::window().map(|w| w.navigator()) else {
+            return false;
+        };
+        js_sys::Reflect::get(&nav, &JsValue::from_str("userActivation"))
+            .ok()
+            .filter(|a| a.is_object())
+            .and_then(|a| js_sys::Reflect::get(&a, &JsValue::from_str("hasBeenActive")).ok())
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
+    /// If the document already has user activation, open a probe `AudioContext` to find
+    /// out whether the browser lets audio run without another gesture.
+    pub fn probe_audio() {
+        if !has_been_active() || PROBE.with_borrow(Option::is_some) {
+            return;
+        }
+        match web_sys::AudioContext::new() {
+            Ok(c) => PROBE.set(Some((c, js_sys::Date::now()))),
+            Err(e) => log::debug!("audio probe: {e:?}"),
+        }
+    }
+
+    /// The probe is running, so starting the game's audio now will be audible. Only ever
+    /// `true` once; a probe still suspended after [`PROBE_MS`] is dropped (Safari wants a
+    /// gesture of its own), and the toolkit then starts audio on the first key press.
+    pub fn audio_allowed() -> bool {
+        PROBE.with_borrow_mut(|p| {
+            let Some((c, t0)) = p else { return false };
+            let running = c.state() == web_sys::AudioContextState::Running;
+            if running || js_sys::Date::now() - *t0 > PROBE_MS {
+                let _ = c.close();
+                *p = None;
+            }
+            running
+        })
     }
 }
 
