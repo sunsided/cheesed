@@ -1,49 +1,61 @@
 # Cheesed!
 
-### *Episode One: A Hole New World*
+### *The Mouse. The Cheese. The Destiny.*
 
-A turn-based block-pushing puzzle in DOS-era dress, built on
-[game-toolkit](https://github.com/sunsided/game-toolkit). You're a mouse in an old cellar,
-and every mouse hole needs a cheese in it.
+A thrilling action adventure in DOS-era dress, in which one mouse stands between the cats and
+the cheese, and the cheese stands between the cats and their dinner. It's written in Rust on
+[game-toolkit](https://github.com/sunsided/game-toolkit) and runs natively as well as in the
+browser.
 
-- **Arrows** (WASD, HJKL, D-pad, or tap/click towards where you want to go): walk. Walk into
-  a cheese to push it. You can push one cheese at a time, and you can never pull.
-- **Z** (U, Backspace, pad B): undo - as often as you like. **R** (pad Y): restart (undoable).
-- **P** pause, **Esc** back to the level menu (and from there: farewell), **M** mute, **C** scanlines.
+![Cheesed! title screen](docs/screenshots/title.png)
 
-## Cheeses
+Storms gather over the mountains, the castle watches from its peak, and somewhere below a very
+large cat is having a very bad day. What happens next is best experienced first-hand (and
+with the sound on).
 
-- **Wedge**: the honest one. One push, one tile.
-- **Red wheel**: heavy. It only rolls if you take a run-up: your previous step must go the
-  same way you push.
-- **Brie**: slippery. It slides until it hits something - straight over empty holes - and
-  leaves a greasy streak on the floorboards.
+## Episodes
 
-## Cats
+This is Episode One, *A Hole New World*, the shareware episode: please copy this disk for all
+your friends.
 
-Cats pace back and forth, one step per move you make, and turn around when blocked. Paw
-prints show where each cat steps next. Cheese blocks cats too. Get caught and it's an undo.
-
-## Crumbs and stars
-
-Every step costs a crumb. Each level has a par - the fewest moves possible, found by the
-built-in solver - so three stars are always within reach.
-
-## Shareware
-
-This is Episode One, the shareware episode. Please copy this disk for all your friends.
-Episodes Two and Three are available in the registered version, which does not exist.
+![Episode One: A Hole New World](docs/screenshots/episode-1.png)
 
 ## Building
 
+You need a Rust toolchain; [go-task](https://taskfile.dev) is optional but saves typing, and
+the browser build needs [trunk](https://trunkrs.dev) and the `wasm32-unknown-unknown` target
+(`task setup` installs both):
+
 ```sh
-task run          # native
-task web          # browser at http://localhost:8080 (needs trunk)
-task test         # rules + a solver proving every level is solvable at par
-task solve        # print optimal solutions (FILE=my_levels.txt for your own)
-task snapshot     # render every screen to snapshots/
+task run                         # native (PROFILE=release for a release build)
+task web                         # in the browser at http://localhost:8080
+PROFILE=release task web:build   # browser build into dist/, ready to upload
+task test
 ```
+
+Plain `cargo run` works too. Your progress is saved in your data directory natively, and in
+the browser's local storage on the web.
+
+## How it's made
+
+It's the sister project of [Cookie D'oh!](https://github.com/sunsided/cookie-doh) and borrows
+its approach rather than its looks:
+
+- Everything is drawn into a 320×200 framebuffer on the CPU, which is uploaded as a single
+  texture each frame and scaled up by whole pixels.
+- Sprites are ASCII art in the source code, one character per palette entry.
+- All sound is synthesized in code: a tiny tracker plays the chiptune metal, and the sound
+  effects (the thunder included) are rendered at startup. No sample files.
+- The title cards are paintings reduced to 256 colours, like the title pictures of the time,
+  and brought to life by moving the painting's own pixels: colour-cycled water, drifting mist,
+  flickering windows, waving flags and lightning on cue.
+
+## Coming soon
+
+We're looking forward to the theatrical release.
+
+![Cheesed! The Movie - this summer, in theaters everywhere](docs/screenshots/the-movie.jpg)
 
 ## License
 
-EUPL-1.2. Dependency notices: `THIRD_PARTY_LICENSES.html`.
+EUPL-1.2. The notices for every bundled dependency are in `THIRD_PARTY_LICENSES.html`.
