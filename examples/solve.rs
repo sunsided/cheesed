@@ -2,10 +2,18 @@
 //!
 //! `cargo run --release --example solve` checks the built-in levels;
 //! `cargo run --release --example solve -- my_levels.txt` checks a file of your own.
+//!
+//! For each level it prints the par, the solver's optimum (moves and pushes), whether they
+//! match, the time taken and the solution in `udlr` notation. A level whose par differs
+//! from the optimum, or that is unsolvable or too big to search, makes the process exit
+//! with status 1, so the example can gate a level-editing workflow. The state limit here
+//! is much higher than in the unit tests, for experimenting with bigger levels.
 
 use cheese::logic::Level;
 use cheese::logic::solver::{Outcome, notation, solve};
 
+/// Loads the level pack (from the path argument or the built-in levels), solves each
+/// level, prints a report line per level and exits non-zero on any problem.
 fn main() {
     let levels = match std::env::args().nth(1) {
         Some(path) => {
@@ -24,6 +32,7 @@ fn main() {
         let secs = t.elapsed().as_secs_f32();
         match outcome {
             Outcome::Solved(path) => {
+                // The solver returns moves only; replay them to count the pushes.
                 let pushes = {
                     let mut s = l.start();
                     let mut ev = Vec::new();

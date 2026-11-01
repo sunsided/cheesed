@@ -4,6 +4,14 @@
 //!
 //! Progress is the best move count per level, keyed by level title so reordering or adding
 //! levels keeps old records. Stored as `title<TAB>moves` lines.
+//!
+//! The platform-specific code lives in a private `imp` module that exists twice, once per
+//! target, with the same four functions (`options`, `load`, `save`, `wipe`). Everything
+//! above it (parsing, the progress map, serialization) is shared and unit tested natively.
+//!
+//! Storage is best-effort throughout: a missing data directory, unreadable file or
+//! unavailable `localStorage` simply means no saved progress, and failed writes are at most
+//! logged. The game never fails to start because of storage.
 
 use std::collections::HashMap;
 
@@ -13,7 +21,8 @@ use crate::logic::Level;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Options {
     /// Testing mode: every level unlocked, and the level menu can jump to the episode
-    /// intro (`I`) and ending (`E`).
+    /// intro (`I`), the ending (`E`) and a preview of the farewell screen (`F`). On an
+    /// intro card, `I` then flips through the episode cards.
     pub cheese: bool,
     /// Wipe saved progress at launch, to test level progression from scratch.
     pub reset: bool,
@@ -21,6 +30,13 @@ pub struct Options {
 
 impl Options {
     /// Parse flags or query pairs (`--cheese`, `cheese`, `cheese=1`, `--reset`).
+    ///
+    /// The same parser serves both platforms: leading dashes are stripped, so `--cheese`,
+    /// `-cheese` and `cheese` are equivalent, and an optional `=value` turns the flag off
+    /// when it is `0`, `false` or `no` (any other value, or none, turns it on). Names are
+    /// case-insensitive. Unknown names are ignored, so a stray argument or an unrelated
+    /// URL parameter never stops the game. When a flag appears more than once, the last
+    /// occurrence wins.
     pub fn parse<'a>(args: impl IntoIterator<Item = &'a str>) -> Self {
         let mut o = Options::default();
         for arg in args {
@@ -36,17 +52,30 @@ impl Options {
         o
     }
 
+    /// The options this process was launched with: the command-line arguments natively,
+    /// the page's URL query (`?cheese&reset`) on the web.
     pub fn load() -> Self {
         imp::options()
     }
 }
 
+/// The player's best solve per level, as loaded from and saved to storage.
+///
+/// A level counts as solved once it has an entry. The app derives level unlocking from
+/// this (see `unlocked` in [`crate::app`]), so no separate "unlocked up to" value is
+/// stored.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Progress {
+    /// Fewest moves per level, keyed by [`Level::title`].
     best: HashMap<String, u32>,
 }
 
 impl Progress {
+    /// Read the `title<TAB>moves` format written by [`Progress::serialize`].
+    ///
+    /// The split happens at the last tab, so a title may itself contain tabs. Lines without
+    /// a tab or with an unparsable move count are skipped silently, so a damaged file loses
+    /// only the damaged lines.
     pub fn parse(src: &str) -> Self {
         let best = src
             .lines()
@@ -58,17 +87,22 @@ impl Progress {
         Self { best }
     }
 
+    /// One `title<TAB>moves` line per level, sorted so the output is stable and diffable.
     pub fn serialize(&self) -> String {
         let mut lines: Vec<String> = self.best.iter().map(|(t, m)| format!("{t}\t{m}")).collect();
         lines.sort();
         lines.join("\n")
     }
 
+    /// The fewest moves `level` has been solved in, or `None` if it was never solved.
     pub fn best(&self, level: &Level) -> Option<u32> {
         self.best.get(&level.title).copied()
     }
 
     /// Record a solve. Returns whether it beat the previous best.
+    ///
+    /// A first solve always counts as beating the previous best, so the return value also
+    /// tells the caller when there is something new to save.
     pub fn record(&mut self, level: &Level, moves: u32) -> bool {
         let entry = self.best.entry(level.title.clone()).or_insert(u32::MAX);
         let better = moves < *entry;
@@ -76,10 +110,13 @@ impl Progress {
         better
     }
 
+    /// The saved progress, or empty progress if there is none or it cannot be read.
     pub fn load() -> Self {
         imp::load().map(|s| Self::parse(&s)).unwrap_or_default()
     }
 
+    /// Write the whole progress map to storage, replacing what was there. Errors are
+    /// logged (natively) or ignored (on the web), never returned.
     pub fn save(&self) {
         imp::save(&self.serialize());
     }
@@ -90,23 +127,30 @@ impl Progress {
     }
 }
 
+/// Native storage: a text file in the user's data directory, options from the command line.
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
     use std::path::PathBuf;
 
+    /// Options from the process arguments, skipping the program name.
     pub fn options() -> super::Options {
         let args: Vec<String> = std::env::args().skip(1).collect();
         super::Options::parse(args.iter().map(String::as_str))
     }
 
+    /// `<data dir>/cheese/progress.txt`, where the data directory is the platform's usual
+    /// one (for example `~/.local/share` on Linux). `None` if the platform has none.
     fn path() -> Option<PathBuf> {
         Some(dirs::data_dir()?.join("cheese").join("progress.txt"))
     }
 
+    /// The progress file's contents, or `None` if it is missing or unreadable.
     pub fn load() -> Option<String> {
         std::fs::read_to_string(path()?).ok()
     }
 
+    /// Delete the progress file. A file that does not exist is not an error; anything
+    /// else is logged.
     pub fn wipe() {
         if let Some(p) = path()
             && let Err(e) = std::fs::remove_file(&p)
@@ -116,6 +160,8 @@ mod imp {
         }
     }
 
+    /// Write `data` to the progress file, creating its directory first. The file is
+    /// overwritten in place (not via a temporary file), and failures are only logged.
     pub fn save(data: &str) {
         let Some(p) = path() else { return };
         if let Some(dir) = p.parent() {
@@ -127,10 +173,14 @@ mod imp {
     }
 }
 
+/// Browser storage: one `localStorage` entry, options from the page URL's query string.
 #[cfg(target_arch = "wasm32")]
 mod imp {
+    /// The `localStorage` key holding the serialized progress.
     const KEY: &str = "cheese.progress";
 
+    /// Options from `location.search`: the leading `?` is dropped and the rest split at
+    /// `&` into `name` or `name=value` pairs. Values are not URL-decoded.
     pub fn options() -> super::Options {
         let search = web_sys::window()
             .and_then(|w| w.location().search().ok())
@@ -138,20 +188,25 @@ mod imp {
         super::Options::parse(search.trim_start_matches('?').split('&'))
     }
 
+    /// The page's `localStorage`, or `None` where it is unavailable (for example when the
+    /// browser blocks storage for the page).
     fn storage() -> Option<web_sys::Storage> {
         web_sys::window()?.local_storage().ok()?
     }
 
+    /// The stored progress string, if any.
     pub fn load() -> Option<String> {
         storage()?.get_item(KEY).ok()?
     }
 
+    /// Remove the stored progress; errors are ignored.
     pub fn wipe() {
         if let Some(s) = storage() {
             let _ = s.remove_item(KEY);
         }
     }
 
+    /// Store `data` under [`KEY`]; errors (such as a full quota) are ignored.
     pub fn save(data: &str) {
         if let Some(s) = storage() {
             let _ = s.set_item(KEY, data);

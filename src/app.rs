@@ -1,4 +1,52 @@
 //! The game-toolkit glue: input, audio device, and presenting the framebuffer.
+//!
+//! [`Cheese`] implements the toolkit's `Game` trait. Each frame, `update` reads the raw
+//! input once into an `Intent`, then runs the handler for the current `Mode`;
+//! `render` draws that mode into the CPU framebuffer ([`Screen`]), uploads it as a texture
+//! and draws it scaled into the window.
+//!
+//! # Modes
+//!
+//! The game is a small state machine. Transitions (all set by the `update_*` methods or
+//! the `goto_*`/`show_*`/`start_level` helpers):
+//!
+//! ```text
+//! Title --any key--> Select
+//! Select --confirm on level 1--> Intro(1) --confirm--> Play(level 1)
+//! Select --confirm on another unlocked level--> Play
+//! Select --confirm on a locked episode--> Intro(n) --confirm--> Select with the order form
+//! Select --back--> Farewell --key or timeout--> quit (native) / Title (web)
+//! Play --solved, confirm--> Play(next level), or End after the last level
+//! Play --back--> Select
+//! End --confirm--> Onward --confirm--> Select with the order form
+//! End / Onward / Intro --back--> Select
+//! ```
+//!
+//! In cheese mode ([`Options::cheese`]) the level menu also jumps straight to `Intro` (`I`),
+//! `End` (`E`) and a `Farewell` preview (`F`) that returns to the menu instead of quitting.
+//!
+//! # The shareware flow
+//!
+//! The game presents itself as episode one of a 90s shareware release. After the real
+//! levels, the level menu lists further episodes that are always locked. Choosing one
+//! shows its title card; confirming the card opens a pretend order form on the level menu
+//! instead of a level. The ending leads the same way, via the "Onward!" teaser. Nothing is
+//! actually for sale.
+//!
+//! # Timers
+//!
+//! All times are in seconds of `dt`. `end_t` is shared by the modes that need a "time in
+//! this screen" clock (`Intro`, `End`, `Onward`, `Farewell`, and the solved/caught panels
+//! in `Play`); every transition into one of them resets it. Each of those screens ignores
+//! confirmation for a short moment after it appears, so a key press meant for the previous
+//! screen, or a held key, does not skip it unseen.
+//!
+//! # Audio
+//!
+//! Sound effects are pre-rendered PCM buffers ([`sfx::Bank`]) played fire-and-forget.
+//! Music is a tracker song synthesized on the audio thread (`Music`); one of three tunes
+//! is chosen from the mode every frame, and its volume is turned down to silence while
+//! paused or after defeat. `M` mutes everything through the master volume.
 
 use std::sync::Arc;
 
@@ -14,21 +62,36 @@ use crate::render::{self, PlayView, Renderer, SelectView, Trail};
 use crate::sound::tracker::Player;
 use crate::sound::{SAMPLE_RATE, sfx, songs};
 
+/// The `id` of the HTML `<canvas>` the game draws into on the web; the page must contain a
+/// canvas with this id.
 pub const CANVAS_ID: &str = "cheese";
+/// Overall loudness of sound effects, multiplied into every per-effect volume so effects
+/// sit at a sensible level against the music.
 const SFX_VOLUME: f32 = 0.6;
+/// Music volume for the title/menu tune and the ending tune.
 const ROCK_VOLUME: f32 = 0.42;
+/// Music volume for the in-game music box tune, which is quieter in character and so
+/// played a little louder.
 const MINUET_VOLUME: f32 = 0.55;
 /// Holding a direction: first repeat after this long, then every `REPEAT_EVERY`.
+/// In seconds; the gap lets a quick tap produce exactly one move.
 const REPEAT_DELAY: f32 = 0.24;
+/// Seconds between repeated moves while a direction stays held, after the first
+/// `REPEAT_DELAY`.
 const REPEAT_EVERY: f32 = 0.12;
 
+/// Which screen the game is on. See the module docs for the transitions.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Mode {
+    /// The title screen with its lightning and thunder; any key continues.
     Title,
+    /// The level menu. Also hosts the locked episodes and the order form.
     Select,
     /// The episode's title card, before its first level.
     Intro,
+    /// A level is being played (including its paused, solved and caught overlays).
     Play,
+    /// The episode ending, after the last level is solved, with the star tally.
     End,
     /// "Onward!": the teaser for episode two, after the ending.
     Onward,
@@ -37,14 +100,24 @@ enum Mode {
 }
 
 /// Where the framebuffer sits in the window.
+///
+/// The 320x200 image is scaled uniformly and centred, with black borders filling the rest.
+/// The same mapping is used in both directions: [`Cheese::render`] draws the texture with
+/// it, and [`Viewport::to_fb`] maps pointer and touch positions back to framebuffer pixels.
 #[derive(Clone, Copy, Debug)]
 struct Viewport {
+    /// Left edge of the image in window pixels.
     x: f32,
+    /// Top edge of the image in window pixels.
     y: f32,
+    /// Window pixels per framebuffer pixel.
     scale: f32,
 }
 
 impl Viewport {
+    /// The largest scale at which the framebuffer fits a `win_w` x `win_h` window, centred.
+    /// Whole-number scales are used whenever the window is at least 320x200; the offsets
+    /// are floored so the image starts on a whole window pixel.
     fn fit(win_w: u32, win_h: u32) -> Self {
         let s = (win_w as f32 / W as f32).min(win_h as f32 / H as f32);
         // Integer scaling keeps every pixel the same size; below 1x there's no choice.
@@ -56,6 +129,8 @@ impl Viewport {
         }
     }
 
+    /// Converts a window position to framebuffer pixel coordinates. Positions on the black
+    /// borders map outside `0..W` / `0..H`; callers filter those out.
     fn to_fb(self, x: f32, y: f32) -> (i32, i32) {
         (
             ((x - self.x) / self.scale).floor() as i32,
@@ -64,6 +139,7 @@ impl Viewport {
     }
 }
 
+/// The three pieces of music. Which one plays is derived from the [`Mode`] every frame.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Tune {
     /// The title and menus: heroic chiptune rock.
@@ -75,15 +151,28 @@ enum Tune {
 }
 
 /// The music stream: one song at a time, synthesized on the audio thread.
+///
+/// A tracker [`Player`] is moved into a closure that the audio backend calls whenever it
+/// needs samples, so the song is rendered on the fly rather than pre-rendered. The game
+/// thread keeps only a [`StreamHandle`] to stop the stream or change its volume.
 #[derive(Default)]
 struct Music {
+    /// The running stream, if one could be started.
     handle: Option<StreamHandle>,
+    /// The tune last asked for. Set even when there is no audio device, so `play` does not
+    /// retry every frame.
     tune: Option<Tune>,
+    /// The current stream volume, also applied to the next stream that starts.
     volume: f32,
 }
 
 impl Music {
     /// Switch to `tune` unless it's already playing.
+    ///
+    /// Switching stops the old stream and starts the new song from the beginning. The new
+    /// stream is created with the current `volume`, so calling [`Music::set_volume`] first
+    /// (as `update` does) avoids a frame at the wrong loudness. Without an audio device this
+    /// only remembers the tune.
     fn play(&mut self, audio: &mut Option<Audio>, tune: Tune) {
         if self.tune == Some(tune) {
             return;
@@ -100,7 +189,8 @@ impl Music {
         };
         let mut player = Player::new(song);
         let stream = move |out: &mut [f32]| player.fill(out);
-        // Deferred: on the web it waits for the first key press or tap.
+        // Deferred: on the web it waits for the first key press or tap. Browsers refuse to
+        // start audio before a user gesture, so the toolkit holds the stream until then.
         match audio.play_stream_with(
             stream,
             SAMPLE_RATE,
@@ -111,6 +201,8 @@ impl Music {
         }
     }
 
+    /// Set the music volume. Called every frame, so it only talks to the audio stream when
+    /// the value actually changed.
     fn set_volume(&mut self, v: f32) {
         if (v - self.volume).abs() > 1e-3 {
             self.volume = v;
@@ -122,26 +214,55 @@ impl Music {
 }
 
 /// What the player asked for this frame, from keyboard, gamepad or pointer.
+///
+/// Built once per frame by [`Cheese::read_intent`], so the mode handlers never look at
+/// devices directly (except the title screen and the cheese-mode debug keys). The boolean
+/// flags are edge-triggered: they are true only on the frame the key or button went down.
 #[derive(Default)]
 struct Intent {
+    /// A move or menu step: a fresh press, an auto-repeat of a held direction, or the
+    /// analog stick crossing into a new direction. Arrow keys, WASD, vi keys (HJKL) and
+    /// the d-pad all count.
     dir: Option<Dir>,
+    /// Space, Enter or the gamepad's south button (A on Xbox layouts).
     confirm: bool,
+    /// Escape or the gamepad's Select button.
     back: bool,
+    /// Z, U, Backspace or the gamepad's east button.
     undo: bool,
+    /// R or the gamepad's north button.
     restart: bool,
+    /// P or the gamepad's Start button.
     pause: bool,
     /// A tap or click, in framebuffer pixels.
+    ///
+    /// Only the first tap or click this frame that lands on the framebuffer is kept;
+    /// touches on the black borders are ignored.
     tap: Option<(i32, i32)>,
 }
 
+/// The whole game: the [`Game`] implementation that `main.rs` hands to the toolkit with
+/// `run::<Cheese>(config())`.
+///
+/// Holds both the per-level play state and the state of the surrounding screens; which
+/// fields matter depends on `Mode`.
 pub struct Cheese {
+    /// The 320x200 framebuffer everything is drawn into.
     screen: Screen,
+    /// The framebuffer converted to RGBA bytes, reused every frame for the texture upload.
     rgba: Vec<u8>,
+    /// The GPU texture showing the framebuffer.
     tex: TextureId,
+    /// Draws each mode's screen into `screen`; holds the decoded art.
     renderer: Renderer,
+    /// Where the framebuffer sits in the window, recomputed on resize and every frame.
     viewport: Viewport,
+    /// The current screen.
     mode: Mode,
+    /// Seconds since launch, for animations that run regardless of mode (menu and sprite
+    /// animation, screen shake, the age of brie trails).
     t: f32,
+    /// Launch options (cheese mode, reset).
     options: Options,
     /// Which episode's intro card is showing (1-based).
     intro_episode: usize,
@@ -149,17 +270,36 @@ pub struct Cheese {
     farewell_preview: bool,
     /// Seconds on the title screen, which times the lightning and its thunder.
     title_t: f32,
+    /// The background music stream.
     music: Music,
+    /// The built-in levels.
     levels: &'static [Arc<Level>],
+    /// Best solves, saved whenever a record improves.
     progress: Progress,
     /// Level-select cursor; also the level being played.
+    ///
+    /// Values from `levels.len()` up point at the locked episode entries after the real
+    /// levels: `levels.len()` is episode two, `levels.len() + 1` episode three, and so on.
     cursor: usize,
+    /// The level being played. Outside `Play` it holds the last level played (or level one
+    /// at launch) and is ignored.
     world: World,
+    /// The tween for the last turn, while it is still playing. `None` when the board is at
+    /// rest; the idle squeak waits for that.
     anim: Option<Anim>,
+    /// Particles and screen shake.
     fx: Fx,
     /// Crumb bursts waiting for the cheese to arrive: (seconds left, tile, kind).
+    ///
+    /// The logic reports a plop at once, but the cheese is still sliding on screen, so the
+    /// burst is delayed by the turn's animation length.
     pending: Vec<(f32, Pos, CheeseKind)>,
+    /// Seconds spent on the current "end-ish" screen: the intro card, ending, onward,
+    /// farewell, or the solved/caught panel during play. Reset on entering each of them;
+    /// the renderer uses it to fade and animate those screens.
     end_t: f32,
+    /// Play is paused (by the player or by losing window focus). Freezes the level, its
+    /// effects and the music.
     paused: bool,
     /// Greasy streaks left by sliding brie.
     trails: Vec<Trail>,
@@ -168,20 +308,34 @@ pub struct Cheese {
     /// Seconds the player hasn't touched anything during a level.
     idle_t: f32,
     /// At this much idle time the mouse squeaks.
+    ///
+    /// Compared against `idle_t`, so after a squeak it is pushed further out (8 to 14
+    /// seconds past the current idle time), and any input sets it to 6 to 11 seconds.
     next_squeak: f32,
     /// Seconds since the last squeak, while its pop-up shows.
     squeak_age: Option<f32>,
     /// The direction being held and the time until it repeats.
     held: Option<(Dir, f32)>,
     /// Last analog stick direction, for edge-triggering.
+    ///
+    /// The stick produces a move only when its direction changes to a new non-neutral one,
+    /// so holding it does not repeat; the player returns to centre to move again.
     stick: Option<Dir>,
+    /// Every sound effect, synthesized once at startup.
     sfx: sfx::Bank,
+    /// `M` toggles this; it zeroes the master volume, silencing music and effects alike.
     muted: bool,
+    /// `C` toggles the CRT scanline overlay drawn in [`Cheese::render`].
     scanlines: bool,
+    /// A short message drawn over every screen: (text, seconds left). A new toast
+    /// replaces the old one.
     toast: Option<(String, f32)>,
 }
 
 impl Cheese {
+    /// Play a sound effect once at `volume` (scaled by [`SFX_VOLUME`]). Effects overlap
+    /// freely; there is no voice limit or priority. Silently does nothing without an audio
+    /// device.
     fn sound(&self, audio: &mut Option<Audio>, pcm: &[f32], volume: f32) {
         if let Some(a) = audio {
             // Before the first gesture on the web this fails; a missed blip is fine.
@@ -193,11 +347,18 @@ impl Cheese {
         }
     }
 
+    /// The best move count of every built-in level, in level order (`None` if unsolved),
+    /// for the level menu.
     fn best(&self) -> Vec<Option<u32>> {
         self.levels.iter().map(|l| self.progress.best(l)).collect()
     }
 
     /// Levels `0..n` are playable: everything up to and including the first unsolved one.
+    ///
+    /// Unlocking is derived from saved progress on every call rather than stored. A gap
+    /// (a later level solved but an earlier one not, which can happen when levels are
+    /// added or reordered) locks everything after the first unsolved level. In cheese mode
+    /// every level is open.
     fn unlocked(&self) -> usize {
         if self.options.cheese {
             return self.levels.len();
@@ -208,10 +369,31 @@ impl Cheese {
             .map_or(self.levels.len(), |i| i + 1)
     }
 
+    /// Where the level-menu cursor starts when coming from the title: the last unlocked
+    /// level, which is the first unsolved one (or the last level once all are solved, or
+    /// the last level in cheese mode).
     fn first_unsolved(&self) -> usize {
         self.unlocked().min(self.levels.len()) - 1
     }
 
+    /// Read this frame's input into an [`Intent`], updating the auto-repeat and stick
+    /// state on the way. `dt` advances the repeat timer.
+    ///
+    /// Directions, in priority order:
+    ///
+    /// 1. A fresh press of any direction key or d-pad button. It also (re)arms auto-repeat
+    ///    for that direction with [`REPEAT_DELAY`].
+    /// 2. Otherwise, if the remembered direction is still held, its timer counts down and
+    ///    fires a repeat on reaching zero, then re-arms with [`REPEAT_EVERY`]. Releasing it
+    ///    clears the repeat. Only the most recently pressed direction repeats.
+    /// 3. The left stick, edge-triggered (see `stick`). It is checked last and overrides
+    ///    the keys on the frame it changes direction.
+    ///
+    /// The stick needs more than half deflection; the dominant axis wins, with ties going
+    /// to the vertical axis. Positive Y is up, following the gamepad convention.
+    ///
+    /// Taps come from new touches and left mouse clicks, converted to framebuffer pixels
+    /// through the current [`Viewport`].
     fn read_intent(&mut self, input: &Input, dt: f32) -> Intent {
         let pad = input.first_gamepad();
         let btn = |b: Button| pad.is_some_and(|p| p.button_pressed(b));
@@ -295,11 +477,17 @@ impl Cheese {
         intent
     }
 
+    /// Switch to the title screen, restarting its clock so the lightning schedule starts
+    /// over.
     fn goto_title(&mut self) {
         self.mode = Mode::Title;
         self.title_t = 0.0;
     }
 
+    /// Switch to the level menu with no pause and no order form showing.
+    ///
+    /// A cursor on a real level is clamped to the unlocked range; a cursor on a locked
+    /// episode entry is left alone, so callers can open the order form on that entry.
     fn goto_select(&mut self) {
         self.mode = Mode::Select;
         self.paused = false;
@@ -309,6 +497,8 @@ impl Cheese {
         }
     }
 
+    /// Start level `i` from scratch and switch to [`Mode::Play`]: a fresh [`World`] (and so
+    /// an empty undo history), and every per-level bit of presentation state cleared.
     fn start_level(&mut self, i: usize) {
         self.cursor = i;
         self.world = World::new(Arc::clone(&self.levels[i]));
@@ -324,6 +514,17 @@ impl Cheese {
         self.mode = Mode::Play;
     }
 
+    /// Title screen: advance its clock, play thunder when the painting's lightning strikes,
+    /// and go to the level menu (cursor on the first unsolved level) on any key.
+    ///
+    /// The lightning schedule lives in [`title::struck`], which the renderer also uses for
+    /// the flash, so sound and picture cannot drift apart. It is asked whether a strike
+    /// happened between the previous and the current time, so no strike is missed or
+    /// doubled whatever the frame rate.
+    ///
+    /// This mode reads raw input instead of the [`Intent`] so that anything counts: any
+    /// key, mouse button, gamepad button or touch (the toolkit's `any_pressed`). Only `M`
+    /// and `C` are excluded, because they toggle mute and scanlines globally.
     fn update_title(&mut self, ctx: &mut Context, dt: f32) {
         let t0 = self.title_t;
         self.title_t += dt;
@@ -341,6 +542,21 @@ impl Cheese {
         }
     }
 
+    /// Level menu.
+    ///
+    /// While the order form is open, any confirm, back, tap or direction just closes it
+    /// and nothing else happens that frame. Otherwise:
+    ///
+    /// - Directions move the cursor through the grid laid out by [`render::select_move`],
+    ///   which also covers the locked episode entries after the real levels.
+    /// - Confirm, or a tap on an entry ([`render::select_hit`]), picks it. Level 1 opens
+    ///   episode one's title card first; other unlocked levels start directly; a locked
+    ///   level only plays a "nope" sound. A locked episode entry (cursor `>= n`) opens that
+    ///   episode's title card, which in turn leads to the order form (see
+    ///   [`Cheese::update_intro`]). Episode numbers start at 2 for the first locked entry.
+    /// - Back leaves for the farewell screen, which closes the game.
+    /// - In cheese mode, `I`, `E` and `F` jump to episode one's card, the ending and a
+    ///   farewell preview.
     fn update_select(&mut self, ctx: &mut Context, it: &Intent) {
         let n = self.levels.len();
         if self.order {
@@ -399,6 +615,11 @@ impl Cheese {
 
     /// Farewell: any key (or waiting) closes the game. The web has nothing to close, so
     /// there it returns to the title.
+    ///
+    /// Input counts only after 0.6 seconds, so the Escape that opened this screen (or a
+    /// quick second press) does not dismiss it before it is seen. Without input the screen
+    /// closes by itself after [`render::farewell::LINGER`] seconds. A cheese-mode preview
+    /// goes back to the level menu instead.
     fn update_farewell(&mut self, ctx: &mut Context, it: &Intent, dt: f32) {
         self.end_t += dt;
         let pressed = it.confirm || it.back || it.tap.is_some() || it.dir.is_some();
@@ -413,12 +634,20 @@ impl Cheese {
         }
     }
 
+    /// Show the title card of `episode` (1-based) and restart its clock.
     fn show_intro(&mut self, episode: usize) {
         self.intro_episode = episode;
         self.mode = Mode::Intro;
         self.end_t = 0.0;
     }
 
+    /// Episode title card.
+    ///
+    /// Back returns to the level menu. Confirm or a tap, accepted after 0.4 seconds,
+    /// starts level 1 for episode one; for any later episode it plays a fanfare and opens
+    /// the order form on the level menu, with the cursor on that episode's locked entry.
+    /// Episode one's card reuses the title's lightning schedule (on this screen's own
+    /// clock), so it gets thunder too.
     fn update_intro(&mut self, ctx: &mut Context, it: &Intent, dt: f32) {
         let t0 = self.end_t;
         self.end_t += dt;
@@ -446,6 +675,25 @@ impl Cheese {
         }
     }
 
+    /// Playing a level. In order, each frame:
+    ///
+    /// 1. Back returns to the level menu at once (the level is abandoned, not saved).
+    /// 2. Pause toggles the pause; while paused, confirm or a tap resumes, and nothing else
+    ///    runs, so animations, pending crumb bursts and the idle timer all freeze.
+    /// 3. After the level ends, `end_t` counts up. When caught, the defeat sound plays as
+    ///    the defeat card appears, [`render::defeat::DELAY`] seconds after the catch. When
+    ///    solved, confirm or a tap moves on once the solved panel has had
+    ///    [`render::SOLVED_DELAY`] seconds: to the next level, or to the ending after the
+    ///    last one.
+    /// 4. Undo, restart or a move is applied to the [`World`]. A tap moves one step
+    ///    towards the tapped tile along whichever axis is farther away (horizontal on a
+    ///    tie). These are still applied after the level ended, which is how undo rescues a
+    ///    caught mouse; moves are simply refused by the logic then.
+    /// 5. If the state changed, a new [`Anim`] tweens from the old state to the new one.
+    ///    A restart cuts any running animation instead, so the board snaps back.
+    /// 6. The idle squeak timer runs (see `next_squeak`).
+    /// 7. The turn's events are handed to [`Cheese::react`], then the animation and the
+    ///    pending crumb bursts advance.
     fn update_play(&mut self, ctx: &mut Context, it: &Intent, dt: f32) {
         if it.back {
             self.goto_select();
@@ -513,12 +761,18 @@ impl Cheese {
         }
         if changed {
             self.anim = Some(Anim::new(before, &self.world.state));
+            // Back in play (say, undo after a catch): the end-of-level clock starts over,
+            // so the next defeat or solve gets its full delay again.
             if self.world.state.status == Status::Playing {
                 self.end_t = 0.0;
             }
         }
 
-        // Left alone for a while, the mouse squeaks.
+        // Left alone for a while, the mouse squeaks. Any input (even a refused move) resets
+        // the idle clock and schedules the first squeak 6 to 11 seconds out; after each
+        // squeak the next one comes 8 to 14 seconds later. The clock only runs while the
+        // level is in play and the board is at rest. The squeak pop-up shows for one
+        // second, or until the player does something.
         let acted = changed || it.dir.is_some() || it.undo || it.restart || it.tap.is_some();
         if acted {
             self.idle_t = 0.0;
@@ -538,6 +792,7 @@ impl Cheese {
             }
         }
 
+        // The animation length tells `react` when a plopped cheese visually arrives.
         let dur = self.anim.as_ref().map_or(0.0, |a| a.dur);
         let events = std::mem::take(&mut self.world.events);
         for e in events {
@@ -564,6 +819,20 @@ impl Cheese {
     }
 
     /// Sounds, effects and bookkeeping for one turn's events.
+    ///
+    /// Called after the world has already moved to the new state, so `self.world.state`
+    /// is the result of the turn. `anim_secs` is the length of that turn's animation.
+    ///
+    /// Besides sounds, this is where the app keeps its own state in step with the logic:
+    ///
+    /// - A brie push leaves a [`Trail`] tagged with the move count after the push. Undo
+    ///   and restart drop every trail with a higher tag, so smears disappear with the turns
+    ///   that made them. Trails are not restored when a restart is itself undone.
+    /// - A plop queues a crumb burst for `anim_secs` later, when the cheese reaches the
+    ///   hole on screen, coloured after the cheese now sitting there.
+    /// - Caught and solved restart the `end_t` clock that times their panels.
+    /// - Solved records the move count and saves progress if it is a new best (or the
+    ///   first solve). This is the only place progress is written.
     fn react(&mut self, ctx: &mut Context, e: Event, anim_secs: f32) {
         let audio = &mut ctx.audio;
         let b = &self.sfx;
@@ -632,10 +901,13 @@ impl Cheese {
         }
     }
 
+    /// Show `msg` over the screen for `secs` seconds, replacing any current toast.
     fn toast(&mut self, msg: &str, secs: f32) {
         self.toast = Some((msg.to_string(), secs));
     }
 
+    /// Episode ending. Back returns to the level menu; confirm or a tap, accepted after
+    /// one second so the star tally can be read, continues to the "Onward!" teaser.
     fn update_end(&mut self, ctx: &mut Context, it: &Intent, dt: f32) {
         self.end_t += dt;
         if it.back {
@@ -648,6 +920,9 @@ impl Cheese {
     }
 
     /// Onward... to the order form, since episode two is "registered version only".
+    ///
+    /// Confirm or a tap (after 0.6 seconds) opens the order form on the level menu with
+    /// the cursor on episode two's entry (`levels.len()`); back goes to the menu without it.
     fn update_onward(&mut self, ctx: &mut Context, it: &Intent, dt: f32) {
         self.end_t += dt;
         if it.back {
@@ -660,6 +935,9 @@ impl Cheese {
         }
     }
 
+    /// Apply the mute setting through the master volume, which covers music and effects
+    /// alike. Music ducking is separate (the music stream's own volume), so muting and
+    /// ducking do not interfere.
     fn apply_volume(&self, ctx: &mut Context) {
         if let Some(a) = &mut ctx.audio {
             a.set_master_volume(if self.muted { 0.0 } else { 1.0 });
@@ -668,6 +946,12 @@ impl Cheese {
 }
 
 impl Game for Cheese {
+    /// Create the framebuffer texture, load launch options and progress, and start on the
+    /// title screen.
+    ///
+    /// With `--reset` the saved progress is deleted before anything else reads it, and a
+    /// toast confirms it. The world is initialised with level 1 only because the field
+    /// needs a value; it is replaced when a level actually starts.
     fn init(ctx: &mut Context) -> Result<Self> {
         let rgba = vec![0; (W * H * 4) as usize];
         let tex = ctx
@@ -720,6 +1004,17 @@ impl Game for Cheese {
         })
     }
 
+    /// One frame of game logic, with `dt` in seconds (variable step).
+    ///
+    /// Global keys come first and work on every screen: `M` toggles mute, `C` toggles the
+    /// scanlines. Then the toast timer runs down, input is read into an `Intent` and the
+    /// current mode's handler runs. Effects advance unless paused.
+    ///
+    /// Music is decided last, from the mode as it is after the handler ran: rock for the
+    /// title and menus, the minuet in play, the extro for the ending screens. While paused,
+    /// or once the defeat card is up, the music volume drops to zero. The stream keeps
+    /// running underneath, so the tune picks up mid-song when the volume returns rather
+    /// than starting over.
     fn update(&mut self, ctx: &mut Context, dt: f32) {
         self.t += dt;
         if ctx.input.key_pressed(Key::KeyM) {
@@ -767,6 +1062,9 @@ impl Game for Cheese {
         self.music.play(&mut ctx.audio, tune);
     }
 
+    /// Window events: refit the viewport on resize, and pause a level when the window
+    /// loses focus so the player does not come back to a squeaking mouse and wonder what
+    /// happened. Regaining focus does not unpause; the player does that.
     fn event(&mut self, _ctx: &mut Context, e: &GameEvent) {
         match *e {
             GameEvent::Resized { width, height } => self.viewport = Viewport::fit(width, height),
@@ -775,6 +1073,17 @@ impl Game for Cheese {
         }
     }
 
+    /// Draw the frame in two stages.
+    ///
+    /// First the current mode is drawn on the CPU into the 320x200 [`Screen`], with the
+    /// toast on top, converted to RGBA and uploaded into the framebuffer texture. Then the
+    /// GPU part: clear the window to black, draw that texture at the viewport's integer
+    /// scale (offset by the screen shake, in whole framebuffer pixels), and, at 3x or more,
+    /// darken the bottom third of every framebuffer row for a CRT scanline look. The
+    /// scanlines are drawn at the unshaken position.
+    ///
+    /// The viewport is refitted here every frame as well as on resize, so it is right even
+    /// if a resize event was missed.
     fn render(&mut self, ctx: &mut Context, frame: &mut Frame) {
         match self.mode {
             Mode::Title => self.renderer.draw_title(&mut self.screen, self.title_t),
@@ -862,6 +1171,9 @@ impl Game for Cheese {
     }
 }
 
+/// The toolkit configuration: window title, a 4x-scaled initial window (1280x800), the web
+/// canvas to attach to, and no assets to load. Everything else uses the toolkit defaults,
+/// including a variable time step.
 pub fn config() -> AppConfig {
     AppConfig {
         title: "Cheesed!".into(),

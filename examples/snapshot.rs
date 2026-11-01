@@ -1,6 +1,15 @@
 //! Headless screenshots of the framebuffer, for checking art without opening a window:
 //! `cargo run --example snapshot -- out_dir` writes title.png, select.png, a frame of every
 //! level, the solved / caught panels, and the music and thunder as WAV files.
+//!
+//! The output directory defaults to `snapshots`. Besides the screens named above it writes
+//! a sprite sheet (`sprites.png`), the order form, a brie mid-slide and with its trail, the
+//! defeat card fading in, the idle squeak, the three episode cards, and the ending, onward
+//! and farewell screens. PNGs are written at 3x.
+//!
+//! This works because nothing below the app layer touches the toolkit: the renderer draws
+//! into a plain [`Screen`], and the views are built by hand here with fixed times instead
+//! of a running clock, so every run produces the same images.
 
 use std::sync::Arc;
 
@@ -13,6 +22,7 @@ use cheese::render::{PlayView, Renderer, SelectView, Trail};
 use cheese::sound::tracker::Player;
 use cheese::sound::{SAMPLE_RATE, songs};
 
+/// Renders each scene into the framebuffer and saves it, printing every path written.
 fn main() {
     let dir = std::env::args()
         .nth(1)
@@ -202,6 +212,10 @@ fn main() {
 }
 
 /// 16-bit mono PCM WAV.
+///
+/// Writes the canonical 44-byte RIFF header (PCM format, one channel, [`SAMPLE_RATE`],
+/// two bytes per sample) followed by the samples, clamped to `-1.0..=1.0` and scaled to
+/// `i16`, little-endian.
 fn wav_bytes(pcm: &[f32]) -> Vec<u8> {
     let data_len = (pcm.len() * 2) as u32;
     let mut out = Vec::with_capacity(44 + data_len as usize);
@@ -223,6 +237,9 @@ fn wav_bytes(pcm: &[f32]) -> Vec<u8> {
     out
 }
 
+/// A [`PlayView`] of `world` with neutral settings (no best score, no trails, no idle
+/// time, not paused, at `t = 1.0`). `end_t` is the time since the level ended, which
+/// selects how far the solved or caught panel has progressed.
 fn play_view<'a>(
     world: &'a World,
     fx: &'a Fx,

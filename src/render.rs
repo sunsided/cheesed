@@ -1,5 +1,30 @@
 //! Draws every screen into the 320x200 framebuffer. No toolkit types: the snapshot example
 //! renders the same way headlessly.
+//!
+//! The renderer is a pure function of what it is shown: the app builds a view struct
+//! ([`PlayView`], [`SelectView`]) or passes a few numbers, and a [`Renderer`] method paints
+//! a complete frame into a [`Screen`], from the backdrop up. Nothing is cached between
+//! frames and nothing here mutates game state; time-based effects (blinking, bobbing,
+//! sinking cheese) are computed from the timestamps in the view.
+//!
+//! Three coordinate systems meet here:
+//!
+//! - **Framebuffer pixels**: `0..320` x `0..200`, top-left origin. Everything is finally
+//!   drawn in these.
+//! - **Tiles**: level cells ([`Pos`]), each [`TILE`] = 16 pixels square. The board is
+//!   centered in the space between the HUD bar at the top and the key-help bar at the
+//!   bottom, so tile `(x, y)` has its top-left pixel at
+//!   `board_origin + (x * 16, y * 16)` ([`board_origin`], [`tile_at`], [`tile_center`]).
+//!   While a turn animates, positions are fractional tiles (see [`anim::lerp`]) and are
+//!   rounded to pixels at the end.
+//! - **Picture pixels**: the painted full-screen images in [`picture`] have their own
+//!   resolution (200 rows tall, possibly wider than 320) and are mapped onto the
+//!   framebuffer by the screens in the submodules.
+//!
+//! The play screen and the level select live in this file. The painted screens (title,
+//! episode intros, defeat card, ending, "Onward!" and "Farewell!") each have a submodule
+//! with a `draw` function; [`Renderer`] owns their pictures and forwards to them. Sprite
+//! art is in [`art`], turn animation timing in [`anim`] and particles in [`fx`].
 
 pub mod anim;
 pub mod art;
@@ -22,32 +47,48 @@ use anim::{Anim, dist, lerp};
 use art::Art;
 use fx::Fx;
 
+/// Edge length of a board tile in framebuffer pixels. All board sprites are this size.
 pub const TILE: i32 = 16;
-/// Height of the status bar at the top.
+/// Height of the status bar at the top (level name, holes, moves, par).
 pub const HUD_H: i32 = 12;
 /// Height of the key-help bar at the bottom.
 pub const FOOT_H: i32 = 12;
-/// The board area: 20x11 tiles.
+/// The widest board that fits: 320 / 16 = 20 tiles. Together with [`MAX_ROWS`] this makes
+/// the board area 20x11 tiles; a test checks that every level fits.
 pub const MAX_COLS: i32 = W / TILE;
+/// The tallest board that fits between the two bars: (200 - 12 - 12) / 16 = 11 tiles,
+/// which fills the 176 pixels between them exactly.
 pub const MAX_ROWS: i32 = (H - HUD_H - FOOT_H) / TILE;
 
-/// Seconds after solving before the "Delicious!" panel shows.
+/// Seconds after solving before the "Delicious!" panel shows, so the last cheese can
+/// finish sinking into its hole first. The panel's stars then pop in one per 0.25 s.
 pub const SOLVED_DELAY: f32 = 0.45;
-/// How far a cheese sinks into its mouse hole, in pixels.
+/// How far a cheese sinks into its mouse hole, in pixels. Combined with the clip line at
+/// row 13 of the hole tile this leaves at most the sprite's top row visible at full depth,
+/// so the hole's own "cheese inside" sprite is what remains on screen.
 const SINK: i32 = 12;
 
+/// Everything [`Renderer::draw_play`] needs for one frame of a level, borrowed from the
+/// app. All times are in seconds.
 pub struct PlayView<'a> {
+    /// The level and its current state (after the latest move).
     pub world: &'a World,
+    /// The turn being animated, if any: it holds the state *before* the move, and positions
+    /// are interpolated from there towards `world.state`. `None` draws everything at rest.
     pub anim: Option<&'a Anim>,
+    /// Particles (crumb bursts and the like), drawn over the board and under the HUD.
     pub fx: &'a Fx,
     /// 1-based level number.
     pub number: usize,
+    /// The best move count recorded for this level, shown above the key-help bar.
     pub best: Option<u32>,
     /// Seconds since launch, for blinking.
     pub t: f32,
     /// Seconds since the level was solved or the mouse caught.
     pub end_t: f32,
+    /// Whether to dim the screen and show the pause box on top.
     pub paused: bool,
+    /// Brie trails to draw on the floor.
     pub trails: &'a [Trail],
     /// Seconds the mouse has stood still (she twitches her ears when idle).
     pub idle: f32,
@@ -56,9 +97,21 @@ pub struct PlayView<'a> {
 }
 
 /// A faint streak where a brie slid. Purely cosmetic.
+///
+/// It is drawn as a 9-pixel-wide band of cream along the line between the two tile centers
+/// (shifted 3 pixels down, to sit under the cheese rather than through it). The band is made
+/// of nine parallel 1px lines, blended at 8% in the middle three, 16% in the next two on
+/// each side and 10% on the outermost, so it looks like a groove with brighter edges. One
+/// pixel in seven is skipped in a diagonal pattern to give it some texture. Starting at
+/// `born`, the band grows from `from` to `to` over [`anim::duration`] for the slide's
+/// length with a quadratic ease-out, like the slide itself, so it roughly keeps pace with
+/// the cheese.
 #[derive(Clone, Copy, Debug)]
 pub struct Trail {
+    /// Tile the brie started its slide from.
     pub from: Pos,
+    /// Tile the brie stopped on. Trails are straight lines, so `from` and `to` share a row
+    /// or a column.
     pub to: Pos,
     /// The move count after the slide: undoing past it wipes the trail.
     pub turn: u32,
@@ -66,9 +119,14 @@ pub struct Trail {
     pub born: f32,
 }
 
+/// Everything [`Renderer::draw_select`] needs for one frame of the level select.
 pub struct SelectView<'a> {
+    /// The episode's levels, in order.
     pub levels: &'a [Arc<Level>],
+    /// Best move count per level (same indices as `levels`), `None` if never solved.
     pub best: &'a [Option<u32>],
+    /// The selected slot: `0..levels.len()` is a level, and `levels.len() + k` is locked
+    /// episode `k` (see [`select_move`]).
     pub cursor: usize,
     /// Levels `0..unlocked` can be played.
     pub unlocked: usize,
@@ -76,10 +134,15 @@ pub struct SelectView<'a> {
     pub order: bool,
     /// Testing mode (`--cheese`): advertise its shortcuts.
     pub cheese: bool,
+    /// Seconds since launch, for the order form's blinking prompt.
     pub t: f32,
 }
 
 /// Top-left pixel of the board, centered in the play area.
+///
+/// Horizontally the board is centered on the full 320-pixel width; vertically it is centered
+/// in the [`MAX_ROWS`] * 16 pixel area that starts right below the HUD bar. Odd leftovers
+/// round towards the top-left.
 pub fn board_origin(level: &Level) -> (i32, i32) {
     (
         (W - level.w * TILE) / 2,
@@ -87,29 +150,45 @@ pub fn board_origin(level: &Level) -> (i32, i32) {
     )
 }
 
-/// The tile under a framebuffer pixel, for taps.
+/// The tile under a framebuffer pixel, for taps. The inverse of [`board_origin`] plus tile
+/// size. Uses floor division, so pixels left of or above the board map to negative tiles
+/// rather than to tile 0; the result may be outside the level and the caller must check.
 pub fn tile_at(level: &Level, x: i32, y: i32) -> Pos {
     let (ox, oy) = board_origin(level);
     Pos::new((x - ox).div_euclid(TILE), (y - oy).div_euclid(TILE))
 }
 
+/// Number of level boxes per row in the select grid.
 const SELECT_COLS: usize = 4;
+/// Width of one level box in the select grid, in pixels.
 const BOX_W: i32 = 60;
+/// Height of one level box (the big number on top, three stars below).
 const BOX_H: i32 = 28;
+/// Horizontal gap between level boxes.
 const GAP_X: i32 = 8;
+/// Vertical gap between rows of level boxes.
 const GAP_Y: i32 = 4;
+/// Top of the first row of level boxes, just below the 21-pixel title bar. Rows follow every
+/// `BOX_H + GAP_Y` = 32 pixels, so rows start at 26, 58 and 90; a fourth row would reach into
+/// the episode banners at [`EP_Y`], so the grid has room for 12 levels.
 const SELECT_Y: i32 = 26;
+/// Top of the first locked-episode banner below the level grid.
 const EP_Y: i32 = 124;
+/// Height of one locked-episode banner. Banners are stacked with a 3-pixel gap.
 const EP_H: i32 = 14;
 
-/// The episodes "only in the registered version": (title, level count).
+/// The episodes "only in the registered version": (title, level count). They appear as
+/// selectable banners under the level grid; choosing one opens the (pretend) order form.
 pub const LOCKED_EPISODES: [(&str, u32); 2] =
     [("THE GOUDA, THE BAD & THE UGLY", 18), ("FONDUE OR DIE", 22)];
 
+/// Left edge of the select grid: the grid is `4 * 60 + 3 * 8` = 264 pixels wide and
+/// centered on the screen, so this is 28.
 fn grid_x0() -> i32 {
     (W - (SELECT_COLS as i32 * (BOX_W + GAP_X) - GAP_X)) / 2
 }
 
+/// Top-left pixel of level box `i` in the select grid, filled row by row, four per row.
 fn select_box(i: usize) -> (i32, i32) {
     let (col, row) = ((i % SELECT_COLS) as i32, (i / SELECT_COLS) as i32);
     (
@@ -118,13 +197,17 @@ fn select_box(i: usize) -> (i32, i32) {
     )
 }
 
-/// The banner of locked episode `k` (0 = episode two).
+/// The banner of locked episode `k` (0 = episode two) as `(x, y, w, h)`: as wide as the
+/// level grid and aligned with it.
 fn episode_box(k: usize) -> (i32, i32, i32, i32) {
     let w = SELECT_COLS as i32 * (BOX_W + GAP_X) - GAP_X;
     (grid_x0(), EP_Y + k as i32 * (EP_H + 3), w, EP_H)
 }
 
 /// Which slot a framebuffer pixel is on: levels are `0..count`, then the locked episodes.
+///
+/// The slots use the same numbering as [`SelectView::cursor`]. Gaps between boxes and the
+/// "more in the full version" filler boxes are not hits.
 pub fn select_hit(count: usize, x: i32, y: i32) -> Option<usize> {
     let level = (0..count).find(|&i| {
         let (bx, by) = select_box(i);
@@ -141,6 +224,20 @@ pub fn select_hit(count: usize, x: i32, y: i32) -> Option<usize> {
 }
 
 /// Move the select cursor: around the level grid, and down into the locked episodes.
+///
+/// Slots `0..count` are levels laid out four to a row (the last row may be short); slots
+/// `count..` are the locked episode banners stacked below the grid. The rules:
+///
+/// - Left and right move within a row and stop at its ends (no wrapping); right also stops
+///   at the last level of a short row.
+/// - Up and down move by a whole row when the slot above or below exists.
+/// - Down from the last row enters the first episode banner. Down from the row above it,
+///   where the slot directly below is missing (a gap in a short last row), goes to the last
+///   level instead.
+/// - On the banners, down and up step between banners; up from the first banner returns to
+///   the first slot of the last grid row. Left and right do nothing there.
+///
+/// `count` must be at least 1.
 pub fn select_move(count: usize, cursor: usize, dir: Dir) -> usize {
     let cols = SELECT_COLS;
     let last_row = (count - 1) / cols;
@@ -165,14 +262,22 @@ pub fn select_move(count: usize, cursor: usize, dir: Dir) -> usize {
     }
 }
 
+/// Draws every screen of the game. Holds the parsed sprites and the decoded painted
+/// pictures, which are built once in [`Renderer::new`] and only read afterwards.
 pub struct Renderer {
+    /// All sprites.
     art: Art,
+    /// The title screen painting.
     cover: picture::Picture,
     /// Episode intro cards, episode 1 first.
     intros: [picture::Picture; intro::EPISODES],
+    /// The ending painting for episode one.
     victory: picture::Picture,
+    /// The painting on the card shown when the mouse is caught.
     defeat: picture::Picture,
+    /// The painting behind the "Onward!" card after the ending.
     onward: picture::Picture,
+    /// The painting behind the "Farewell!" screen shown when quitting.
     farewell: picture::Picture,
 }
 
@@ -183,6 +288,7 @@ impl Default for Renderer {
 }
 
 impl Renderer {
+    /// Parse all sprites and decode all embedded pictures. Done once at startup.
     pub fn new() -> Self {
         Self {
             art: Art::new(),
@@ -199,6 +305,10 @@ impl Renderer {
         }
     }
 
+    /// Fill the screen with the dark blue backdrop shared by the play and select screens: navy
+    /// with a sparse stipple of slightly lighter dots. A dot is drawn where `(x + y) % 4 == 0`
+    /// (diagonal lines of every fourth pixel) and `(x / 2 + y) % 8 < 2` (which keeps only short
+    /// runs of those lines), giving a faint diagonal texture.
     fn backdrop(&self, s: &mut Screen) {
         s.clear(pal::NAVY);
         for y in 0..H {
@@ -212,6 +322,29 @@ impl Renderer {
 
     // ---- Play ------------------------------------------------------------------------
 
+    /// Draw one frame of a level, back to front:
+    ///
+    /// 1. The backdrop, then the board: floor (two plank variants in a checkerboard), a
+    ///    translucent shadow on floor tiles below or right of a wall, holes (with the "cheese
+    ///    inside" sprite if the *current* state has a cheese there), and walls, but only walls
+    ///    adjacent (including diagonally) to an inside tile, so the void around the building
+    ///    stays empty.
+    /// 2. Brie trails (see [`Trail`]).
+    /// 3. Paw prints on the tile each cat will step onto next turn, while play is waiting for
+    ///    input (no turn animation, or it has finished).
+    /// 4. Cheeses, interpolated from the previous state. A cheese whose move starts or ends on a
+    ///    hole sinks into or rises out of it during the half of the move spent over the hole:
+    ///    it is drawn up to `SINK` pixels lower and clipped at row 13 of the hole's tile, so
+    ///    it vanishes behind the hole's lip from the bottom up. Cheeses at rest in a hole get an
+    ///    occasional sparkle and a rising heart.
+    /// 5. Cats, interpolated with the walk timing, with a stride frame for the middle of the
+    ///    step. Facing follows `facing_left`.
+    /// 6. The mouse: bobbing one pixel and using its stride frame while walking, twitching an
+    ///    ear now and then while idle and rapidly while squeaking, with the "SQUEAK!" text
+    ///    rising above her. If she was caught, she is drawn squashed with the cat pouncing on
+    ///    top instead.
+    /// 7. Particles, the HUD, the level hint (only before the first move), then the solved
+    ///    panel or the defeat card, and finally the pause overlay.
     pub fn draw_play(&self, s: &mut Screen, v: &PlayView) {
         let w = v.world;
         let level = &*w.level;
@@ -348,6 +481,8 @@ impl Renderer {
                     s.put(gx, gy + 2, pal::WHITE);
                 } else if (0.5..0.8).contains(&phase) {
                     let rise = ((phase - 0.5) * 20.0) as i32;
+                    // Note: the tiny font has no `^` glyph (only Font::Normal does), so this
+                    // heart currently draws nothing.
                     font::draw(s, Font::Tiny, x + 6, y - rise + 2, "^", pal::PINK);
                 }
             }
@@ -453,6 +588,9 @@ impl Renderer {
         }
     }
 
+    /// The top status bar (level number and title on the left; holes filled, moves and par on
+    /// the right, in pink once over par), the bottom key-help bar, and the best score just
+    /// above the bottom bar's right end.
     fn hud(&self, s: &mut Screen, v: &PlayView) {
         let st = &v.world.state;
         let level = &v.world.level;
@@ -499,6 +637,9 @@ impl Renderer {
         }
     }
 
+    /// The "Delicious!" panel shown [`SOLVED_DELAY`] seconds after solving: the title in a
+    /// pulsing yellow gradient, up to three stars that fill in one every 0.25 s, the move count
+    /// against par, a verdict line, and a blinking prompt.
     fn solved_panel(&self, s: &mut Screen, v: &PlayView) {
         let st = &v.world.state;
         let level = &v.world.level;
@@ -549,6 +690,11 @@ impl Renderer {
 
     // ---- Level select --------------------------------------------------------------
 
+    /// Draw the level select: the episode title bar with a "SHAREWARE" stamp, the grid of
+    /// level boxes (selected one in cheese colors with an ink outline, locked ones dark with a
+    /// padlock, each with its earned stars), "more in the full version" filler boxes to
+    /// complete the last row, the locked-episode banners, an info bar at the bottom describing
+    /// the slot under the cursor, and the order form on top if it is open.
     pub fn draw_select(&self, s: &mut Screen, v: &SelectView) {
         self.backdrop(s);
         let n = v.levels.len();
@@ -700,17 +846,19 @@ impl Renderer {
 
     // ---- Title and ending --------------------------------------------------------------
 
+    /// The title screen; `t` is seconds since it appeared.
     pub fn draw_title(&self, s: &mut Screen, t: f32) {
         title::draw(s, &self.cover, t);
     }
 
-    /// The card before an episode's first level (`episode` is 1-based).
+    /// The card before an episode's first level (`episode` is 1-based and clamped to the
+    /// episodes that exist).
     pub fn draw_intro(&self, s: &mut Screen, episode: usize, t: f32) {
         let i = episode.clamp(1, intro::EPISODES);
         intro::draw(s, &self.intros[i - 1], i, t);
     }
 
-    /// The end of episode one.
+    /// The end of episode one, with `earned` of `max` possible stars.
     pub fn draw_end(&self, s: &mut Screen, earned: u32, max: u32, t: f32) {
         ending::draw(s, &self.victory, earned, max, t);
     }
@@ -726,7 +874,8 @@ impl Renderer {
     }
 }
 
-/// A screen-centered toast near the bottom.
+/// A screen-centered toast near the bottom: one line of yellow text in a rounded box just
+/// above the key-help bar.
 pub fn toast(s: &mut Screen, msg: &str) {
     let w = Font::Normal.measure(msg, 1) + 12;
     let (x, y) = (W / 2 - w / 2, H - FOOT_H - 18);
@@ -734,7 +883,12 @@ pub fn toast(s: &mut Screen, msg: &str) {
     font::draw_centered(s, Font::Normal, W / 2, y + 3, msg, pal::YELLOW);
 }
 
-/// A hint in a speech bubble at the top of the board area, word-wrapped.
+/// A hint in a speech bubble at the bottom of the board area, word-wrapped.
+///
+/// The text is uppercased and greedily wrapped at word boundaries to at most
+/// `(320 - 24) / 6` = 49 characters per line (a single longer word gets a line to itself and
+/// may overflow). The bubble is sized to the longest line plus padding, centered, placed
+/// just above the key-help bar, and given a translucent drop shadow.
 fn hint_bubble(s: &mut Screen, text: &str) {
     let max = (W - 24) / Font::Normal.advance();
     let mut lines: Vec<String> = Vec::new();
@@ -769,7 +923,9 @@ fn hint_bubble(s: &mut Screen, text: &str) {
     }
 }
 
-/// The (pretend) order form for the registered version.
+/// The (pretend) order form for the registered version, drawn over a dimmed screen: a
+/// cream sheet with a drop shadow, a red title, the sales lines, fine print and a blinking
+/// prompt.
 fn order_form(s: &mut Screen, t: f32) {
     s.blend_rect(0, 0, W, H, pal::NAVY, 0.7);
     let (x, y, w, h) = (14, 14, W - 28, H - 28);
@@ -821,22 +977,33 @@ fn order_form(s: &mut Screen, t: f32) {
     }
 }
 
+/// A dialog panel: a translucent drop shadow, a dark rounded box with a yellow outline, and
+/// an inner slate rule two pixels in. Used for the pause box and the solved panel.
 fn panel(s: &mut Screen, x: i32, y: i32, w: i32, h: i32) {
     s.blend_rect(x + 3, y + 3, w, h, pal::INK, 0.5);
     s.round_box(x, y, w, h, pal::NIGHT, pal::YELLOW);
     s.rect_outline(x + 2, y + 2, w - 4, h - 4, pal::SLATE);
 }
 
+/// Whether blinking text is visible at time `t`: on for 1 s, off for 0.5 s, repeating
+/// every 1.5 s.
 fn blink(t: f32) -> bool {
     (t * 2.0) as i32 % 3 != 0
 }
 
-/// Whether a wall tile borders the inside (walls deep in the void aren't drawn).
+/// Whether a wall tile borders the inside (walls deep in the void aren't drawn). Checks the
+/// 3x3 neighbourhood, so diagonal contact counts and outer corners are drawn.
 fn touches_inside(level: &Level, p: Pos) -> bool {
     (-1..=1).any(|dy| (-1..=1).any(|dx| level.inside(Pos::new(p.x + dx, p.y + dy))))
 }
 
 /// Cats face the way they walk; walking up or down they keep their last sideways look.
+///
+/// `prev` is the cat's direction in the state the frame interpolates from (the state before
+/// the move while a turn animation exists, otherwise the current state). A cat heading up
+/// or down faces left only if `prev` was `Left`; in every other case it faces right. The
+/// "last sideways look" therefore only survives one turn: once `prev` is itself vertical,
+/// the cat faces right.
 fn facing_left(dir: Dir, prev: Option<Dir>) -> bool {
     match dir {
         Dir::Left => true,
@@ -845,7 +1012,8 @@ fn facing_left(dir: Dir, prev: Option<Dir>) -> bool {
     }
 }
 
-/// The colors of a cheese, for crumb bursts.
+/// The colors of a cheese, for crumb bursts: particles pick from these so the crumbs match
+/// the cheese that was pushed.
 pub fn cheese_colors(kind: CheeseKind) -> &'static [Rgb] {
     match kind {
         CheeseKind::Wedge => &[pal::YELLOW, pal::YELLOW_LT, pal::CHEESE_DK],
@@ -854,7 +1022,7 @@ pub fn cheese_colors(kind: CheeseKind) -> &'static [Rgb] {
     }
 }
 
-/// Pixel center of a tile.
+/// Pixel center of a tile, as floats for particle positions.
 pub fn tile_center(level: &Level, p: Pos) -> (f32, f32) {
     let (ox, oy) = board_origin(level);
     (
@@ -868,6 +1036,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// Walks the cursor through an 11-level grid (rows of 4, 4 and 3) and the two banners.
     fn select_cursor_walks_the_grid_and_into_the_episodes() {
         let n = 11; // rows 0..3, last row has 3 levels
         assert_eq!(select_move(n, 0, Dir::Right), 1);
@@ -887,6 +1056,7 @@ mod tests {
     }
 
     #[test]
+    /// Pixel hit-testing finds level boxes and episode banners, and misses the title bar.
     fn select_hit_finds_boxes_and_banners() {
         let (x, y) = select_box(5);
         assert_eq!(select_hit(11, x + 2, y + 2), Some(5));
@@ -896,6 +1066,7 @@ mod tests {
     }
 
     #[test]
+    /// Every level fits in the [`MAX_COLS`] x [`MAX_ROWS`] board area.
     fn levels_fit_the_board() {
         for l in crate::logic::levels() {
             assert!(
