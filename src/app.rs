@@ -303,6 +303,11 @@ pub struct Cheese {
     paused: bool,
     /// Greasy streaks left by sliding brie.
     trails: Vec<Trail>,
+    /// The trails as they were before each entry in the world's undo history, kept in step
+    /// with it: pushed whenever the history grows (a step or a restart), popped and restored
+    /// on undo. That way undoing a restart brings the streaks back, and undoing a slide
+    /// wipes exactly its own streak.
+    trail_history: Vec<Vec<Trail>>,
     /// The level menu is showing the (pretend) order form.
     order: bool,
     /// Seconds the player hasn't touched anything during a level.
@@ -506,10 +511,14 @@ impl Cheese {
         self.fx = Fx::new();
         self.pending.clear();
         self.trails.clear();
+        self.trail_history.clear();
         self.end_t = 0.0;
         self.paused = false;
         self.held = None;
         self.idle_t = 0.0;
+        // A fresh level gets a fresh squeak timer, not one pushed far out by idling on the
+        // previous level.
+        self.next_squeak = 8.0;
         self.squeak_age = None;
         self.mode = Mode::Play;
     }
@@ -735,6 +744,7 @@ impl Cheese {
         }
 
         let before = self.world.state.clone();
+        let depth = self.world.history_len();
         let mut changed = false;
         if it.undo {
             changed = self.world.undo();
@@ -758,6 +768,19 @@ impl Cheese {
             if let Some(d) = dir {
                 changed = self.world.step(d);
             }
+        }
+        // Keep the trails in step with the undo history (see `trail_history`). New streaks
+        // from this turn's slide are added afterwards, by `react`.
+        let new_depth = self.world.history_len();
+        if new_depth > depth {
+            self.trail_history.push(self.trails.clone());
+            if it.restart {
+                self.trails.clear();
+            }
+        } else if new_depth < depth
+            && let Some(prev) = self.trail_history.pop()
+        {
+            self.trails = prev;
         }
         if changed {
             self.anim = Some(Anim::new(before, &self.world.state));
@@ -825,9 +848,9 @@ impl Cheese {
     ///
     /// Besides sounds, this is where the app keeps its own state in step with the logic:
     ///
-    /// - A brie push leaves a [`Trail`] tagged with the move count after the push. Undo
-    ///   and restart drop every trail with a higher tag, so smears disappear with the turns
-    ///   that made them. Trails are not restored when a restart is itself undone.
+    /// - A brie push leaves a [`Trail`]. Undo and restart are handled by `update_play`,
+    ///   which keeps a copy of the trails for every undo-history entry: undoing a slide
+    ///   wipes exactly its streak, and undoing a restart brings the streaks back.
     /// - A plop queues a crumb burst for `anim_secs` later, when the cheese reaches the
     ///   hole on screen, coloured after the cheese now sitting there.
     /// - Caught and solved restart the `end_t` clock that times their panels.
@@ -856,7 +879,6 @@ impl Cheese {
                     self.trails.push(Trail {
                         from: e_from,
                         to: e_to,
-                        turn: self.world.state.moves,
                         born: self.t,
                     });
                 }
@@ -894,9 +916,6 @@ impl Cheese {
                     &b.restart
                 };
                 self.sound(audio, sfx, 0.7);
-                // Smears from undone turns un-happen too.
-                let moves = self.world.state.moves;
-                self.trails.retain(|tr| tr.turn <= moves);
             }
         }
     }
@@ -991,6 +1010,7 @@ impl Game for Cheese {
             end_t: 0.0,
             paused: false,
             trails: Vec::new(),
+            trail_history: Vec::new(),
             order: false,
             idle_t: 0.0,
             next_squeak: 8.0,
@@ -1080,7 +1100,7 @@ impl Game for Cheese {
     /// GPU part: clear the window to black, draw that texture at the viewport's integer
     /// scale (offset by the screen shake, in whole framebuffer pixels), and, at 3x or more,
     /// darken the bottom third of every framebuffer row for a CRT scanline look. The
-    /// scanlines are drawn at the unshaken position.
+    /// scanlines move with the shake, so they stay on their pixel rows.
     ///
     /// The viewport is refitted here every frame as well as on resize, so it is right even
     /// if a resize event was missed.
@@ -1150,17 +1170,15 @@ impl Game for Cheese {
         let (dw, dh) = (W as f32 * vp.scale, H as f32 * vp.scale);
         let mut p = frame.painter(&mut ctx.gfx);
         p.clear([0.0, 0.0, 0.0, 1.0]);
-        p.sprite(
-            self.tex,
-            [vp.x + sx as f32 * vp.scale, vp.y + sy as f32 * vp.scale],
-            [dw, dh],
-        );
+        let (shake_x, shake_y) = (sx as f32 * vp.scale, sy as f32 * vp.scale);
+        p.sprite(self.tex, [vp.x + shake_x, vp.y + shake_y], [dw, dh]);
         if self.scanlines && vp.scale >= 3.0 {
             let thick = (vp.scale / 3.0).floor();
             for row in 0..H {
-                let y = vp.y + (row as f32 + 1.0) * vp.scale - thick;
+                // Shaken along with the picture, so the lines stay on their pixel rows.
+                let y = vp.y + shake_y + (row as f32 + 1.0) * vp.scale - thick;
                 p.rect_ex(
-                    [vp.x, y],
+                    [vp.x + shake_x, y],
                     [dw, thick],
                     [0.0, 0.0, 0.0, 0.22],
                     1,

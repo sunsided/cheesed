@@ -133,7 +133,6 @@ fn main() {
             } => Some(Trail {
                 from,
                 to,
-                turn: 0,
                 born: -10.0,
             }),
             _ => None,

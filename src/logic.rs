@@ -432,6 +432,12 @@ impl World {
     }
 
     /// Whether there is an earlier state to go back to.
+    /// How many states the undo history holds; grows by one for every step or restart that
+    /// changed something, shrinks by one per undo.
+    pub fn history_len(&self) -> usize {
+        self.history.len()
+    }
+
     pub fn can_undo(&self) -> bool {
         !self.history.is_empty()
     }
@@ -453,11 +459,13 @@ impl World {
     /// Back to the start. Undoable, so a hasty restart costs nothing.
     ///
     /// Does nothing (no history entry, no event) when the state already equals the start.
-    /// That comparison includes `facing`, so a mouse that only turned by bumping still
-    /// counts as changed.
+    /// The mouse's `facing` is left out of that comparison: turning on the spot by bumping
+    /// into a wall isn't progress worth restarting (or undoing back to).
     pub fn restart(&mut self) {
         let start = self.level.start();
-        if self.state != start {
+        let mut current = self.state.clone();
+        current.facing = start.facing;
+        if current != start {
             let prev = std::mem::replace(&mut self.state, start);
             self.history.push(prev);
             self.events.push(Event::Restarted);
@@ -592,6 +600,16 @@ mod tests {
             Pos::new(5, 2),
             "turned back from the cheese"
         );
+    }
+
+    #[test]
+    fn turning_on_the_spot_is_not_worth_a_restart() {
+        let mut w = world("######\n#@ $.#\n######");
+        assert!(!w.step(Dir::Up), "bump into the wall: only turns");
+        w.events.clear();
+        w.restart();
+        assert!(w.events.is_empty(), "no restart, no restart sound");
+        assert!(!w.can_undo());
     }
 
     #[test]

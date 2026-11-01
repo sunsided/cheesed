@@ -235,9 +235,9 @@ fn plop() -> Vec<f32> {
 ///
 /// Five notes on a 40 % pulse, one shared oscillator so the phase runs on between notes.
 /// Each note fades in over 25 ms and sags linearly to half level by its end. The pitch
-/// carries a vibrato of +-1.2 % (about a fifth of a semitone) at `5.5` rad/s, under 1 Hz,
-/// which itself fades in over a third of a second; so the short notes barely move and only
-/// the long final E wavers. The whole line is then shaped by `1 - x^3` (x = progress 0..1),
+/// carries a vibrato of +-1.2 % (about a fifth of a semitone) at 5.5 Hz (hence the `TAU`),
+/// which itself fades in over a third of a second, so it opens up on each note and is
+/// strongest on the long final E. The whole line is then shaped by `1 - x^3` (x = progress 0..1),
 /// which stays near full for the first half and fades out over the long last note. Peak 0.45.
 fn defeat() -> Vec<f32> {
     // B4 G4 E4 D#4 ... E4: falling, then resolving into a long, wavering low note.
@@ -247,7 +247,7 @@ fn defeat() -> Vec<f32> {
     for (note, secs) in notes {
         let hz = midi_hz(note);
         out.extend(render(secs, |t| {
-            let vib = 1.0 + 0.012 * (t * 5.5).sin() * (t * 3.0).min(1.0);
+            let vib = 1.0 + 0.012 * (t * std::f32::consts::TAU * 5.5).sin() * (t * 3.0).min(1.0);
             let env = (t * 40.0).min(1.0) * (1.0 - t / secs * 0.5);
             osc.sample(Wave::Pulse(0.4), hz * vib) * env
         }));

@@ -113,8 +113,6 @@ pub struct Trail {
     /// Tile the brie stopped on. Trails are straight lines, so `from` and `to` share a row
     /// or a column.
     pub to: Pos,
-    /// The move count after the slide: undoing past it wipes the trail.
-    pub turn: u32,
     /// When it was made (seconds since launch), so it grows with the slide.
     pub born: f32,
 }

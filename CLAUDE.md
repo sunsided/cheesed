@@ -362,7 +362,8 @@ See README.md for the rules. Sister project of `../cookie-doh` (same architectur
   keep your own copies of the paintings. Re-run `task cover`
   after changing a painting (and re-check the water rectangles if the composition moved). The level menu plays the
   shareware joke (locked episodes, `order_form`); keep it silly.
-- Brie leaves cosmetic `render::Trail`s (app-side, wiped on undo past their turn).
+- Brie leaves cosmetic `render::Trail`s (app-side, kept in step with the undo history via
+  `trail_history`, so undo and undoing a restart both restore the right streaks).
 - `src/platform.rs`: progress (best moves per level title) in the data dir / `localStorage`.
 - Check art headlessly: `task snapshot` (PNGs in `snapshots/`, incl. `sprites.png`).
 - Modules use `name.rs` + `name/` (no `mod.rs`).
