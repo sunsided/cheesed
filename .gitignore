@@ -1,0 +1,9 @@
+/target
+/dist
+/.playwright-mcp
+/snapshots
+/.task
+# Local Taskfile overrides (the shared one is Taskfile.dist.yaml)
+/Taskfile.yml
+/Taskfile.yaml
+/src/render/*.preview.png

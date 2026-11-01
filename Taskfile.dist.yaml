@@ -1,0 +1,105 @@
+# https://taskfile.dev
+version: '3'
+
+vars:
+  PROFILE: '{{ .PROFILE | default "debug" }}'
+  PROFILE_FLAG: '{{ if eq .PROFILE "release" }}--release{{ end }}'
+
+tasks:
+  default:
+    cmds:
+      - task --list --sort=none
+    silent: true
+
+  setup:
+    desc: Install the wasm target, trunk and cargo-about (skips what's already there)
+    cmds:
+      - rustup target add wasm32-unknown-unknown
+      - sh -c 'command -v trunk >/dev/null || cargo install trunk --locked'
+      - sh -c 'command -v cargo-about >/dev/null || cargo install cargo-about --locked --features cli'
+
+  run:
+    desc: Run the game (PROFILE=debug|release)
+    preconditions:
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
+    cmds:
+      - cargo run {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
+
+  build:
+    desc: Build (PROFILE=debug|release)
+    cmds:
+      - cargo build {{.PROFILE_FLAG}} {{.CLI_ARGS}}
+
+  test:
+    desc: Run tests (includes solving every level)
+    cmds:
+      - cargo test {{.CLI_ARGS}}
+
+  solve:
+    desc: Solve the built-in levels (or FILE=levels.txt) and print the optimal move counts
+    cmds:
+      - cargo run -q --release --example solve -- {{.FILE}}
+
+  snapshot:
+    desc: Render every screen and level to PNG in snapshots/ (no window)
+    cmds:
+      - cargo run -q --release --example snapshot -- snapshots
+
+  cover:
+    desc: Re-convert art/cover.png into the title picture (src/render/cover.bin; needs Pillow)
+    sources: [art/cover.png, tools/cover.py]
+    generates: [src/render/cover.bin]
+    cmds:
+      - python3 tools/cover.py art/cover.png src/render/cover.bin
+
+  fmt:
+    desc: Format sources
+    aliases: [format]
+    cmds:
+      - cargo fmt --all
+
+  lint:
+    desc: Clippy (warnings as errors)
+    cmds:
+      - cargo clippy --all-targets -- -D warnings
+
+  check:
+    desc: Format check + clippy
+    cmds:
+      - cargo fmt --all --check
+      - cargo clippy --all-targets -- -D warnings
+
+  check:wasm:
+    desc: Clippy for the browser target (wasm32-unknown-unknown)
+    preconditions:
+      - sh: rustup target list --installed | grep -qx wasm32-unknown-unknown
+        msg: "wasm target missing — run: rustup target add wasm32-unknown-unknown"
+    cmds:
+      - cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
+
+  licenses:
+    desc: Regenerate THIRD_PARTY_LICENSES.html (notices for every bundled dependency)
+    preconditions:
+      - sh: command -v cargo-about
+        msg: "cargo-about not found — run: cargo install cargo-about --locked --features cli"
+    sources: [Cargo.lock, about.toml, about.hbs]
+    generates: [THIRD_PARTY_LICENSES.html]
+    cmds:
+      - cargo about generate about.hbs -o THIRD_PARTY_LICENSES.html
+
+  web:
+    desc: Run in the browser with live rebuild at http://localhost:8080 (needs trunk)
+    preconditions: &web-preconditions
+      - sh: command -v trunk
+        msg: "trunk not found — run: cargo install trunk --locked"
+      - sh: rustup target list --installed | grep -qx wasm32-unknown-unknown
+        msg: "wasm target missing — run: rustup target add wasm32-unknown-unknown"
+    cmds:
+      - trunk serve {{.PROFILE_FLAG}} {{.CLI_ARGS}}
+
+  web:build:
+    desc: Build for the browser into dist/ (PROFILE=release, then zip dist/ for itch.io)
+    preconditions: *web-preconditions
+    cmds:
+      - trunk build {{.PROFILE_FLAG}} {{.CLI_ARGS}}

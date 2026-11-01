@@ -1,0 +1,13 @@
+[build]
+target = "index.html"
+dist = "dist"
+# Relative URLs so the build works from any sub-path (itch.io, GitHub Pages).
+public_url = "./"
+# Stable file names (cheese.js / cheese_bg.wasm) so a host page can import them directly.
+filehash = false
+
+[serve]
+port = 8080
+
+[watch]
+ignore = ["target", "dist", "docs", "snapshots"]

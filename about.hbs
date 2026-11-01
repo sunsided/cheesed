@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheesed! - Third-party licenses</title>
+  <style>
+    body { background: #0b0d1f; color: #c2cbe8; font: 15px/1.5 system-ui, sans-serif; margin: 0 auto; max-width: 52rem; padding: 2rem 1rem; }
+    a { color: #9af0f0; }
+    h1, h2, h3 { color: #f5d39a; }
+    pre { background: #1a1f3d; padding: 1rem; overflow-x: auto; white-space: pre-wrap; font-size: 13px; }
+    ul.crates { columns: 2; }
+    li.license { list-style: none; margin-bottom: 2rem; }
+  </style>
+</head>
+<body>
+  <h1>Third-party licenses</h1>
+  <p>
+    <strong>Cheesed!</strong> is copyright &copy; 2026 Markus Mayer and
+    licensed under the <a href="https://interoperable-europe.ec.europa.eu/collection/eupl/eupl-text-eupl-12">EUPL-1.2</a>.
+    It is built with the open-source software listed below, under these licenses.
+  </p>
+  <h2>Overview</h2>
+  <ul>
+    {{#each overview}}
+    <li><a href="#{{id}}">{{name}}</a> ({{count}})</li>
+    {{/each}}
+  </ul>
+  <h2>License texts</h2>
+  <ul>
+    {{#each licenses}}
+    <li class="license">
+      <h3 id="{{id}}">{{name}}</h3>
+      <p>Used by:</p>
+      <ul class="crates">
+        {{#each used_by}}
+        <li><a href="{{#if crate.repository}}{{crate.repository}}{{else}}https://crates.io/crates/{{crate.name}}{{/if}}">{{crate.name}} {{crate.version}}</a></li>
+        {{/each}}
+      </ul>
+      <pre>{{text}}</pre>
+    </li>
+    {{/each}}
+  </ul>
+</body>
+</html>

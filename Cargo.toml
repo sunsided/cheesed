@@ -1,0 +1,34 @@
+[package]
+name = "cheese"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "Cheesed! - a mouse pushes cheese into its mouse holes. A turn-based block-pushing puzzle in DOS-era dress."
+license = "EUPL-1.2"
+authors = ["Markus Mayer"]
+publish = false
+
+[dependencies]
+game-toolkit = "0.7"
+log = "0.4"
+
+# Native builds log via env_logger; on the web the toolkit logs to the browser console.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = "0.11"
+dirs = "6"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Storage"] }
+
+# Optimize dependencies even in dev builds; our own code still compiles fast.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+
+# The solver test walks millions of states; unoptimized it takes minutes.
+[profile.test]
+opt-level = 2

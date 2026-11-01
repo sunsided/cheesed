@@ -1,0 +1,121 @@
+; The built-in levels. Format: see src/logic/level.rs. `par` must equal the solver's
+; optimum: `cargo test` checks it, `cargo run --release --example solve` prints it.
+;
+; Design notes: a cheese on a tile next to an outer wall can never be pushed away from it;
+; brie needs a backstop behind its hole; a wheel needs three free tiles in a row (run-up,
+; push spot, wheel) for every push that starts it moving.
+
+title: First Bite
+hint: Push the cheese into the mouse hole!
+par: 3
+#########
+#@ $ .  #
+#########
+
+title: Around the Corner
+hint: You can only push, never pull. Plan the corner!
+par: 7
+########
+#@     #
+#  $   #
+###  ###
+  # . #
+  #####
+
+title: Twin Pantry
+hint: Every hole needs a cheese.
+par: 13
+#########
+#   #   #
+# $ @ $ #
+#   #   #
+##.###.##
+ #     #
+ #######
+
+title: Slippery Brie
+hint: Brie is slippery: it slides until it hits something.
+par: 18
+###########
+#@ b     .#
+#         #
+# $  b  . #
+#         #
+###########
+
+title: Heavy Wheel
+hint: The red wheel is heavy. Take a run-up first!
+par: 11
+###########
+#         #
+#         #
+# @  o    #
+#         #
+#####  ####
+    #  #
+    # .#
+    ####
+
+title: Here, Kitty
+hint: Cats pace back and forth. Paw prints show their next step.
+par: 12
+###########
+#  .   .  #
+#    >    #
+#  $   $  #
+#    @    #
+###########
+
+title: Storeroom
+par: 36
+ ######
+ #    ###
+ # $$   #
+## #  . #
+#  $ ## #
+# @  .. #
+#########
+
+title: Cheese Wall
+hint: Cheese stops cats too.
+par: 15
+##########
+#        #
+#  $  $  #
+#>       #
+#   $    #
+#@ #..#  #
+##########
+
+title: Big Cheese
+par: 36
+#############
+#   @ #     #
+# $   #   . #
+#   o   b   #
+#     #     #
+#.    #    .#
+#############
+
+title: Night Shift
+par: 29
+#############
+#     #     #
+# @$  #   . #
+#     #     #
+##  ##### ###
+#     >     #
+#  .  o  b .#
+#           #
+#           #
+#############
+
+title: Cat Flap
+par: 56
+###########
+#   #     #
+#   #   . #
+# $$ .<   #
+#@$ #   . #
+#   #     #
+###########

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cheesed!</title>
+    <!-- trunk: build the crate to wasm. Everything is generated in code: no assets to copy. -->
+    <link data-trunk rel="rust" data-bin="cheese" />
+    <!-- Dependency license notices ship with every web build (regenerate: task licenses). -->
+    <link data-trunk rel="copy-file" href="THIRD_PARTY_LICENSES.html" />
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; }
+      body { display: flex; align-items: center; justify-content: center; }
+      /* 16:10, the shape of a 320x200 screen; the game letterboxes inside it. */
+      #cheese {
+        outline: none;
+        width: min(100vw, calc(100vh * 16 / 10)) !important;
+        height: min(100vh, calc(100vw * 10 / 16)) !important;
+        touch-action: none;
+        image-rendering: pixelated;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="cheese" tabindex="0"></canvas>
+  </body>
+</html>
