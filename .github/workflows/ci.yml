@@ -1,0 +1,44 @@
+# On every push to main and every pull request: formatting, clippy for the native and the
+# browser target (warnings as errors), and the tests, which include solving every built-in
+# level at par.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Format, clippy, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install system libraries (ALSA, udev, D-Bus)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev libdbus-1-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy (native)
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Clippy (wasm)
+        run: cargo clippy --locked --target wasm32-unknown-unknown --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --locked

@@ -1,0 +1,167 @@
+# On a version tag (v1.2.3): build the native Linux binary and the browser build, attest
+# their build provenance, attach both to a GitHub release for that tag, and deploy the
+# browser build to GitHub Pages.
+#
+# Verify a downloaded artifact with:
+#   gh attestation verify cheesed-<tag>-linux-x86_64.tar.gz --repo sunsided/cheesed
+# The unpacked cheese binary and the cheese_bg.wasm / cheese.js served on GitHub Pages
+# verify the same way.
+#
+# Note: artifact attestations need a public repository (or GitHub Enterprise Cloud for
+# private ones); the attest step fails while the repository is private.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  TRUNK_VERSION: 0.22.1
+
+jobs:
+  linux:
+    name: Linux binary
+    # The oldest supported runner, so the binary runs on older glibc versions too.
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write # sign the provenance attestation
+      attestations: write # store the provenance attestation
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install system libraries (ALSA, udev, D-Bus)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev libdbus-1-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux
+
+      - name: Build
+        run: cargo build --release --locked
+
+      # The binary itself, so it still verifies after the archive is unpacked.
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: target/release/cheese
+
+      - name: Package
+        run: |
+          name="cheesed-${GITHUB_REF_NAME}-linux-x86_64"
+          mkdir -p "pkg/$name"
+          cp target/release/cheese LICENSE README.md THIRD_PARTY_LICENSES.html "pkg/$name/"
+          tar -C pkg -czf "$name.tar.gz" "$name"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-linux
+          path: cheesed-*-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  web:
+    name: Web build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # sign the provenance attestation
+      attestations: write # store the provenance attestation
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: web
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk@${{ env.TRUNK_VERSION }}
+
+      # Everything is embedded in the wasm (no asset files to preload).
+      - name: Build
+        run: trunk build --release --locked
+
+      # The same files GitHub Pages serves, so the deployed site verifies byte for byte.
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/cheese_bg.wasm
+            dist/cheese.js
+
+      - name: Package
+        run: |
+          name="cheesed-${GITHUB_REF_NAME}-web"
+          (cd dist && zip -r -9 "../$name.zip" .)
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-web
+          path: cheesed-*-web.zip
+          if-no-files-found: error
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  # Needs Settings > Pages > Source set to "GitHub Actions".
+  pages:
+    name: Deploy to GitHub Pages
+    needs: [web]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write # publish the site
+      id-token: write # authenticate the deployment
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5
+
+  release:
+    name: Publish release
+    needs: [linux, web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+      id-token: write # sign the provenance attestation
+      attestations: write # store the provenance attestation
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          # Only the release archives, not the github-pages artifact.
+          pattern: release-*
+          path: out
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: out
+        run: sha256sum * > SHA256SUMS
+
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            out/*.tar.gz
+            out/*.zip
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Cheesed! $GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag
