@@ -3,6 +3,7 @@
 
 pub mod anim;
 pub mod art;
+pub mod defeat;
 pub mod ending;
 pub mod fx;
 pub mod intro;
@@ -46,6 +47,10 @@ pub struct PlayView<'a> {
     pub end_t: f32,
     pub paused: bool,
     pub trails: &'a [Trail],
+    /// Seconds the mouse has stood still (she twitches her ears when idle).
+    pub idle: f32,
+    /// Seconds since her last idle squeak, while it's on screen.
+    pub squeak_age: Option<f32>,
 }
 
 /// A faint streak where a brie slid. Purely cosmetic.
@@ -164,6 +169,7 @@ pub struct Renderer {
     /// Episode intro cards, episode 1 first.
     intros: [picture::Picture; intro::EPISODES],
     victory: picture::Picture,
+    defeat: picture::Picture,
 }
 
 impl Default for Renderer {
@@ -183,6 +189,7 @@ impl Renderer {
                 picture::Picture::intro_episode_3(),
             ],
             victory: picture::Picture::victory_episode_1(),
+            defeat: picture::Picture::defeat(),
         }
     }
 
@@ -373,11 +380,39 @@ impl Renderer {
             let moving = u > 0.0 && u < 1.0;
             let frame = usize::from(moving && u > 0.4);
             let bob = i32::from(moving && u < 0.6);
-            match state.facing {
-                Dir::Right => s.blit(&self.art.mouse_right[frame], x, y - bob),
-                Dir::Left => s.blit_flipped(&self.art.mouse_right[frame], x, y - bob),
-                Dir::Down => s.blit(&self.art.mouse_down[frame], x, y - bob),
-                Dir::Up => s.blit(&self.art.mouse_up[frame], x, y - bob),
+            // Ear twitches: now and then while idle, and rapidly while squeaking.
+            let squeaking = v
+                .squeak_age
+                .is_some_and(|a| a < 0.45 && (a * 14.0) as i32 % 2 == 0);
+            let idle_flick = v.idle > 0.6 && (v.t % 2.9) < 0.13;
+            let twitch = !moving && (squeaking || idle_flick);
+            let art = &self.art;
+            let (sprite, flip) = match state.facing {
+                Dir::Right | Dir::Left if twitch => {
+                    (&art.mouse_twitch[0], state.facing == Dir::Left)
+                }
+                Dir::Down if twitch => (&art.mouse_twitch[1], false),
+                Dir::Up if twitch => (&art.mouse_twitch[2], false),
+                Dir::Right => (&art.mouse_right[frame], false),
+                Dir::Left => (&art.mouse_right[frame], true),
+                Dir::Down => (&art.mouse_down[frame], false),
+                Dir::Up => (&art.mouse_up[frame], false),
+            };
+            s.blit_ex(sprite, x, y - bob, flip, None);
+            if let Some(a) = v.squeak_age.filter(|&a| a < 0.9) {
+                let msg = "SQUEAK!";
+                let rise = (a * 10.0) as i32;
+                let tx = x + TILE / 2 - Font::Tiny.measure(msg, 1) / 2;
+                font::draw_outlined(
+                    s,
+                    Font::Tiny,
+                    tx,
+                    y - 7 - rise,
+                    msg,
+                    1,
+                    &|_| pal::WHITE,
+                    pal::INK,
+                );
             }
         }
 
@@ -393,7 +428,7 @@ impl Renderer {
 
         match state.status {
             Status::Solved if v.end_t >= SOLVED_DELAY => self.solved_panel(s, v),
-            Status::Caught if v.end_t >= 0.25 => self.caught_panel(s, v),
+            Status::Caught => defeat::draw(s, &self.defeat, v.end_t, v.t),
             _ => {}
         }
         if v.paused {
@@ -501,39 +536,6 @@ impl Renderer {
                 W / 2,
                 y + 72,
                 "SPACE: NEXT   Z: UNDO",
-                pal::YELLOW,
-            );
-        }
-    }
-
-    fn caught_panel(&self, s: &mut Screen, v: &PlayView) {
-        let (x, y, w, h) = (80, H - FOOT_H - 58, 160, 52);
-        panel(s, x, y, w, h);
-        font::draw_outlined(
-            s,
-            Font::Normal,
-            W / 2 - Font::Normal.measure("CAUGHT!", 2) / 2,
-            y + 8,
-            "CAUGHT!",
-            2,
-            &|row| pal::PINK.lerp(pal::RED, row as f32 / 6.0),
-            pal::INK,
-        );
-        font::draw_centered(
-            s,
-            Font::Tiny,
-            W / 2,
-            y + 28,
-            "THE CAT WAS FASTER.",
-            pal::PALE,
-        );
-        if blink(v.t) {
-            font::draw_centered(
-                s,
-                Font::Tiny,
-                W / 2,
-                y + 40,
-                "Z: UNDO   R: RESTART",
                 pal::YELLOW,
             );
         }

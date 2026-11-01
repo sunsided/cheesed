@@ -12,6 +12,8 @@ pub struct Art {
     pub mouse_right: [Sprite; 2],
     pub mouse_down: [Sprite; 2],
     pub mouse_up: [Sprite; 2],
+    /// Idle ear twitch frames: right, down, up.
+    pub mouse_twitch: [Sprite; 3],
     /// Squashed flat, under a paw.
     pub mouse_caught: Sprite,
     pub wedge: Sprite,
@@ -37,6 +39,11 @@ impl Art {
                 Sprite::parse_with(HOLE_FULL, &[('y', 'E'), ('Y', 'w'), ('O', 'r')]),
             ],
             mouse_right: [Sprite::parse(MOUSE_RIGHT), Sprite::parse(MOUSE_RIGHT_2)],
+            mouse_twitch: [
+                patched(MOUSE_RIGHT, &SIDE_TWITCH),
+                patched(MOUSE_DOWN, &FRONT_TWITCH),
+                patched(MOUSE_UP, &BACK_TWITCH),
+            ],
             mouse_down: [
                 Sprite::parse(MOUSE_DOWN),
                 feet_swapped(Sprite::parse(MOUSE_DOWN)),
@@ -63,6 +70,43 @@ impl Default for Art {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The side view with the near ear flicked back (the far one stays perked).
+const SIDE_TWITCH: [(usize, &str); 4] = [
+    (0, "..........k....."),
+    (1, "...kkkkk..kPk..."),
+    (2, "..kPPPPPkkPPPk.."),
+    (3, "..kPPPPkkkkkkk.."),
+];
+
+/// Front and back views with the left ear flopped out sideways.
+const FRONT_TWITCH: [(usize, &str); 4] = [
+    (0, "...........kkk.."),
+    (1, "..........kPPPk."),
+    (2, ".kkkk.kkkkPPPPPk"),
+    (3, "kPPPPkAAAAkkPPPk"),
+];
+
+/// The back view's flop (its head is the darker grey).
+const BACK_TWITCH: [(usize, &str); 4] = [
+    (0, "...........kkk.."),
+    (1, "..........kPPPk."),
+    (2, ".kkkk.kkkkPPPPPk"),
+    (3, "kPPPPkaaaakkPPPk"),
+];
+
+/// Parse `art` with some rows replaced (for animation frames that differ in a few rows).
+fn patched(art: &str, rows: &[(usize, &str)]) -> Sprite {
+    let mut lines: Vec<&str> = art
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    for &(i, row) in rows {
+        lines[i] = row;
+    }
+    Sprite::parse(&lines.join("\n"))
 }
 
 /// A cheap second walk frame for the front and back views: the feet row mirrored.
@@ -169,10 +213,10 @@ const HOLE_FULL: &str = "
 ";
 
 const MOUSE_RIGHT: &str = "
-    ....kkkk........
-    ...kPPPPk.......
-    ..kPPPPPPk......
-    ..kPPPPPkkkkk...
+    ....kkkk..k.....
+    ...kPPPPk.kPk...
+    ..kPPPPPPkPPPk..
+    ..kPPPPPkkkkkk..
     ...kPPkkAAAAAk..
     ....kkAAAAAAAAk.
     ...kAAAAAAkkAAk.
@@ -188,10 +232,10 @@ const MOUSE_RIGHT: &str = "
 ";
 
 const MOUSE_RIGHT_2: &str = "
-    ....kkkk........
-    ...kPPPPk.......
-    ..kPPPPPPk......
-    ..kPPPPPkkkkk...
+    ....kkkk..k.....
+    ...kPPPPk.kPk...
+    ..kPPPPPPkPPPk..
+    ..kPPPPPkkkkkk..
     ...kPPkkAAAAAk..
     ....kkAAAAAAAAk.
     ...kAAAAAAkkAAk.
@@ -425,6 +469,7 @@ mod tests {
             .chain(&a.mouse_right)
             .chain(&a.mouse_down)
             .chain(&a.mouse_up)
+            .chain(&a.mouse_twitch)
             .chain(&a.cat_right)
             .chain([&a.cat_pounce, &a.mouse_caught])
         {

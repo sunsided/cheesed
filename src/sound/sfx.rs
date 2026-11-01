@@ -28,6 +28,10 @@ pub struct Bank {
     pub fanfare: Vec<f32>,
     /// The crack and roll of thunder, for the title's lightning.
     pub thunder: Vec<f32>,
+    /// The mouse, bored: "squeak-eek!"
+    pub squeak: Vec<f32>,
+    /// Caught: a slow, sad, falling line.
+    pub defeat: Vec<f32>,
 }
 
 impl Bank {
@@ -55,6 +59,8 @@ impl Bank {
                 0.6,
             ),
             thunder: thunder(),
+            squeak: squeak(),
+            defeat: defeat(),
         }
     }
 }
@@ -155,6 +161,45 @@ fn plop() -> Vec<f32> {
     pop
 }
 
+fn defeat() -> Vec<f32> {
+    // B4 G4 E4 D#4 ... E4: falling, then resolving into a long, wavering low note.
+    let notes: [(u8, f32); 5] = [(71, 0.3), (67, 0.3), (64, 0.3), (63, 0.45), (64, 1.4)];
+    let mut out = Vec::new();
+    let mut osc = Osc::default();
+    for (note, secs) in notes {
+        let hz = midi_hz(note);
+        out.extend(render(secs, |t| {
+            let vib = 1.0 + 0.012 * (t * 5.5).sin() * (t * 3.0).min(1.0);
+            let env = (t * 40.0).min(1.0) * (1.0 - t / secs * 0.5);
+            osc.sample(Wave::Pulse(0.4), hz * vib) * env
+        }));
+    }
+    let n = out.len() as f32;
+    for (i, s) in out.iter_mut().enumerate() {
+        *s *= 1.0 - (i as f32 / n).powi(3);
+    }
+    normalize(&mut out, 0.45);
+    out
+}
+
+fn squeak() -> Vec<f32> {
+    // Two tiny chirps: a quick rise-and-fall, then a higher, shorter one.
+    let mut osc = Osc::default();
+    let chirp = |osc: &mut Osc, secs: f32, lo: f32, hi: f32| {
+        render(secs, |t| {
+            let k = t / secs;
+            let hz = lo + (hi - lo) * (1.0 - (2.0 * k - 1.0).powi(2)) + 40.0 * (t * 90.0).sin();
+            let env = (t * 300.0).min(1.0) * (1.0 - k);
+            osc.sample(Wave::Pulse(0.25), hz) * env
+        })
+    };
+    let mut out = chirp(&mut osc, 0.07, 2100.0, 2900.0);
+    out.extend(std::iter::repeat_n(0.0, (SR * 0.035) as usize));
+    out.extend(chirp(&mut osc, 0.05, 2500.0, 3400.0));
+    normalize(&mut out, 0.35);
+    out
+}
+
 fn thunder() -> Vec<f32> {
     // A sharp crack, then a low rumble that rolls (amplitude wobbles) and fades.
     let secs = 3.2;
@@ -216,6 +261,8 @@ mod tests {
             ("solved", &b.solved),
             ("fanfare", &b.fanfare),
             ("thunder", &b.thunder),
+            ("squeak", &b.squeak),
+            ("defeat", &b.defeat),
         ] {
             assert!(!pcm.is_empty(), "{name}");
             assert!(

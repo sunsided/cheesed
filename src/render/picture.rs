@@ -305,6 +305,13 @@ impl Picture {
             .with_water((143, 58, 163, 108), 95)
     }
 
+    /// Caught: the cheese, just out of reach, glows.
+    pub fn defeat() -> Picture {
+        Picture::parse(include_bytes!("defeat.bin"))
+            .expect("embedded defeat parses")
+            .with_glow((246, 104, 316, 160), (279, 137), 0.4)
+    }
+
     /// The river in the valley flows.
     pub fn victory_episode_1() -> Picture {
         Picture::parse(include_bytes!("victory.bin"))
@@ -403,6 +410,7 @@ mod tests {
             Picture::intro_episode_2(),
             Picture::intro_episode_3(),
             Picture::victory_episode_1(),
+            Picture::defeat(),
         ] {
             assert_eq!(p.h, H);
             assert!(p.w <= W);

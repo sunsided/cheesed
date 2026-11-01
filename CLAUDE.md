@@ -341,7 +341,8 @@ See README.md for the rules. Sister project of `../cookie-doh` (same architectur
   `render::title::struck` so it lands on the lightning flash. `task snapshot` also writes
   the music and thunder as WAVs.
 - Paintings (`render/picture.rs`): the title cover `art/cover.png`, the episode-one intro
-  `art/intro-episode-1.png` / `-2.png` / `-3.png` and ending `art/victory-episode-1.png` are reduced to 256-color 320x200 pictures by
+  `art/intro-episode-1.png` / `-2.png` / `-3.png`, the defeat card `art/defeat.png`
+  (fades in `defeat::DELAY` s after a catch, music stops, sad sting) and ending `art/victory-episode-1.png` are reduced to 256-color 320x200 pictures by
   `task cover` (`tools/cover.py`, needs Pillow) into `src/render/*.bin`, embedded via
   `include_bytes!`. `render/title.rs` and `render/ending.rs` draw a little life over them
   (sparkles, glints, lightning). Effect layers on `Picture` animate the painting's own

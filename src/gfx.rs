@@ -40,6 +40,13 @@ impl Screen {
         self.px.copy_from_slice(&other.px);
     }
 
+    /// Mix `other` over this screen with opacity `a` (0..=1), for cross-fades.
+    pub fn mix_from(&mut self, other: &Screen, a: f32) {
+        for (p, o) in self.px.iter_mut().zip(&other.px) {
+            *p = p.lerp(*o, a);
+        }
+    }
+
     #[inline]
     pub fn put(&mut self, x: i32, y: i32, c: Rgb) {
         if (0..W).contains(&x) && (0..H).contains(&y) {

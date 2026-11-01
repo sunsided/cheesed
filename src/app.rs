@@ -159,6 +159,12 @@ pub struct Cheese {
     trails: Vec<Trail>,
     /// The level menu is showing the (pretend) order form.
     order: bool,
+    /// Seconds the player hasn't touched anything during a level.
+    idle_t: f32,
+    /// At this much idle time the mouse squeaks.
+    next_squeak: f32,
+    /// Seconds since the last squeak, while its pop-up shows.
+    squeak_age: Option<f32>,
     /// The direction being held and the time until it repeats.
     held: Option<(Dir, f32)>,
     /// Last analog stick direction, for edge-triggering.
@@ -307,6 +313,8 @@ impl Cheese {
         self.end_t = 0.0;
         self.paused = false;
         self.held = None;
+        self.idle_t = 0.0;
+        self.squeak_age = None;
         self.mode = Mode::Play;
     }
 
@@ -422,7 +430,14 @@ impl Cheese {
 
         let status = self.world.state.status;
         if status != Status::Playing {
+            let t0 = self.end_t;
             self.end_t += dt;
+            if status == Status::Caught
+                && t0 < render::defeat::DELAY
+                && self.end_t >= render::defeat::DELAY
+            {
+                self.sound(&mut ctx.audio, &self.sfx.defeat, 1.0);
+            }
         }
         if status == Status::Solved && self.end_t >= render::SOLVED_DELAY {
             let next = it.confirm || it.tap.is_some();
@@ -467,6 +482,26 @@ impl Cheese {
             self.anim = Some(Anim::new(before, &self.world.state));
             if self.world.state.status == Status::Playing {
                 self.end_t = 0.0;
+            }
+        }
+
+        // Left alone for a while, the mouse squeaks.
+        let acted = changed || it.dir.is_some() || it.undo || it.restart || it.tap.is_some();
+        if acted {
+            self.idle_t = 0.0;
+            self.next_squeak = 6.0 + ctx.rng.next_f32() * 5.0;
+        } else if self.world.state.status == Status::Playing && self.anim.is_none() {
+            self.idle_t += dt;
+            if self.idle_t >= self.next_squeak {
+                self.sound(&mut ctx.audio, &self.sfx.squeak, 0.8);
+                self.squeak_age = Some(0.0);
+                self.next_squeak = self.idle_t + 8.0 + ctx.rng.next_f32() * 6.0;
+            }
+        }
+        if let Some(a) = &mut self.squeak_age {
+            *a += dt;
+            if *a > 1.0 || acted {
+                self.squeak_age = None;
             }
         }
 
@@ -623,6 +658,9 @@ impl Game for Cheese {
             paused: false,
             trails: Vec::new(),
             order: false,
+            idle_t: 0.0,
+            next_squeak: 8.0,
+            squeak_age: None,
             held: None,
             stick: None,
             sfx: sfx::Bank::new(),
@@ -664,7 +702,11 @@ impl Game for Cheese {
             Mode::Play => Tune::Minuet,
             Mode::End => Tune::Extro,
         };
-        let volume = match (self.paused, tune) {
+        // The music stops for the defeat card.
+        let defeated = self.mode == Mode::Play
+            && self.world.state.status == Status::Caught
+            && self.end_t >= render::defeat::DELAY;
+        let volume = match (self.paused || defeated, tune) {
             (true, _) => 0.0,
             (false, Tune::Rock | Tune::Extro) => ROCK_VOLUME,
             (false, Tune::Minuet) => MINUET_VOLUME,
@@ -708,6 +750,8 @@ impl Game for Cheese {
                     end_t: self.end_t,
                     paused: self.paused,
                     trails: &self.trails,
+                    idle: self.idle_t,
+                    squeak_age: self.squeak_age,
                 };
                 self.renderer.draw_play(&mut self.screen, &view);
             }

@@ -35,6 +35,9 @@ fn main() {
         &a.mouse_right[1],
         &a.mouse_down[0],
         &a.mouse_up[0],
+        &a.mouse_twitch[0],
+        &a.mouse_twitch[1],
+        &a.mouse_twitch[2],
         &a.mouse_caught,
         &a.cat_right[0],
         &a.cat_right[1],
@@ -146,8 +149,21 @@ fn main() {
             w.step(d);
         }
     }
-    r.draw_play(&mut s, &play_view(&w, &fx, 6, 1.0, None));
+    r.draw_play(&mut s, &play_view(&w, &fx, 6, 0.5, None));
     save(&s, "caught");
+    r.draw_play(&mut s, &play_view(&w, &fx, 6, 1.15, None));
+    save(&s, "defeat_fading");
+    r.draw_play(&mut s, &play_view(&w, &fx, 6, 3.0, None));
+    save(&s, "defeat");
+
+    // Idle on level 1: an ear twitch and a squeak.
+    let w = World::new(Arc::clone(&levels()[0]));
+    let mut v = play_view(&w, &fx, 1, 0.0, None);
+    v.idle = 9.0;
+    v.squeak_age = Some(0.2);
+    v.t = 0.05;
+    r.draw_play(&mut s, &v);
+    save(&s, "squeak");
 
     r.draw_intro(&mut s, 1, 1.0);
     save(&s, "intro");
@@ -220,5 +236,7 @@ fn play_view<'a>(
         end_t,
         paused: false,
         trails: &[],
+        idle: 0.0,
+        squeak_age: None,
     }
 }
