@@ -20,6 +20,28 @@ pub struct Picture {
     flash: Vec<Flash>,
     /// Cloth waving in the wind (flags).
     flutter: Vec<Flutter>,
+    /// Mist drifting through a valley.
+    fog: Vec<Fog>,
+}
+
+/// Valley mist: soft, brighter wisps drift slowly sideways through the fog pixels, with a
+/// gentle vertical sway, so the mist breathes without changing its shape.
+pub struct Fog {
+    px: Vec<Px>,
+}
+
+impl Fog {
+    fn draw(&self, s: &mut Screen, (ox, oy): (i32, i32), t: f32) {
+        use std::f32::consts::TAU;
+        for &(x, y, c) in &self.px {
+            let sway = (y as f32 * 0.3 + t * 0.6).sin() * 1.1;
+            let wisp = 0.5 + 0.5 * (TAU * (x as f32 / 34.0 - t * 0.17) + sway).sin();
+            let lit = c
+                .lerp(pal::PALE, 0.45 * wisp * wisp)
+                .scale(0.82 + 0.18 * wisp);
+            s.put(ox + x, oy + y, lit);
+        }
+    }
 }
 
 /// Flags in the wind: light and shade ripple along the cloth.
@@ -167,6 +189,7 @@ impl Picture {
             twinkle: Vec::new(),
             flash: Vec::new(),
             flutter: Vec::new(),
+            fog: Vec::new(),
         })
     }
 
@@ -224,6 +247,17 @@ impl Picture {
             .map(|(x, y, c)| (x, y, c, hash01(x / cl, y / cl)))
             .collect();
         self.twinkle.push(Twinkle { px, depth, rate });
+        self
+    }
+
+    /// Misty pixels (pale, bluish, low saturation) inside `areas` drift like fog.
+    pub fn with_fog(mut self, areas: &[(i32, i32, i32, i32)]) -> Self {
+        let mist = |_, _, c: Rgb| {
+            let spread = c.0.max(c.1).max(c.2) - c.0.min(c.1).min(c.2);
+            c.2 > c.0 && c.2 > c.1 && (70..220).contains(&luma(c)) && spread < 110
+        };
+        let px = areas.iter().flat_map(|&r| self.select(r, mist)).collect();
+        self.fog.push(Fog { px });
         self
     }
 
@@ -351,7 +385,7 @@ impl Picture {
     }
 
     /// Leaving: the castle's flag waves; its windows and the torchlit path up the mountain
-    /// twinkle. (The painting's faint stars don't survive 256 colours.)
+    /// twinkle; mist drifts through the valley. (The painting's faint stars don't survive 256 colours.)
     pub fn farewell() -> Picture {
         let warm = |c: Rgb| c.0 > 200 && c.1 > 140 && c.2 < 140;
         Picture::parse(include_bytes!("farewell.bin"))
@@ -361,6 +395,7 @@ impl Picture {
             })
             .with_twinkle((244, 78, 272, 102), 2, 0.45, 5.0, warm)
             .with_twinkle((240, 100, 284, 142), 2, 0.5, 4.0, warm)
+            .with_fog(&[(165, 125, 320, 195), (0, 110, 60, 170)])
     }
 
     /// Caught: the cheese, just out of reach, glows.
@@ -461,6 +496,9 @@ impl Picture {
             f.draw(s, (ox, oy), t);
         }
         for f in &self.flutter {
+            f.draw(s, (ox, oy), t);
+        }
+        for f in &self.fog {
             f.draw(s, (ox, oy), t);
         }
     }
@@ -590,6 +628,12 @@ mod tests {
             .map(|f| f.px.len())
             .sum();
         assert!((60..=130).contains(&flags), "{flags} episode 2 flag pixels");
+    }
+
+    #[test]
+    fn farewell_valley_has_fog() {
+        let fog: usize = Picture::farewell().fog.iter().map(|f| f.px.len()).sum();
+        assert!((500..=3000).contains(&fog), "{fog} fog pixels");
     }
 
     #[test]

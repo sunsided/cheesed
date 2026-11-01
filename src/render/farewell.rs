@@ -15,7 +15,7 @@ pub const LINGER: f32 = 8.0;
 /// Stars in the open sky (the painted ones are lost in 256 colours; clouds stay starless).
 const STARS: [(i32, i32); 7] = [
     (88, 6),
-    (123, 7),
+    (132, 5),
     (147, 7),
     (220, 8),
     (239, 18),
@@ -56,9 +56,9 @@ pub fn draw(s: &mut Screen, pic: &Picture, t: f32) {
     }
 
     // The raised sword's tip blazes; her buckle and dagger hilt catch the light.
-    blaze(s, (ox + 172, oy + 13), t);
+    blaze(s, (ox + 168, oy + 12), t);
     gleam(s, (ox + 135, oy + 98), t, 4.3, 1.1);
-    gleam(s, (ox + 115, oy + 110), t, 5.7, 3.0);
+    gleam(s, (ox + 120, oy + 110), t, 5.7, 3.0);
 
     if blink(t) {
         let msg = "PRESS ANY KEY";
