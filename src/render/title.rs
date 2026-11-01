@@ -6,7 +6,7 @@ use crate::gfx::palette as pal;
 use crate::gfx::{H, Screen, W};
 
 use super::blink;
-use super::picture::{Picture, glints, sparkle};
+use super::picture::{Picture, flare, glints, sparkle, twinkle_stars};
 
 /// Seconds between lightning strikes, and when in that cycle one strikes.
 pub const LIGHTNING_EVERY: f32 = 7.0;
@@ -49,15 +49,37 @@ pub fn struck(t0: f32, t1: f32) -> bool {
     t1 >= LIGHTNING_AT && cycle(t0) != cycle(t1)
 }
 
+/// The painted stars: compact bright points, found once on the cover (bolts, being lines,
+/// don't qualify).
+const STARS: [(i32, i32); 16] = [
+    (284, 3),
+    (75, 4),
+    (261, 4),
+    (17, 6),
+    (8, 8),
+    (43, 11),
+    (23, 13),
+    (262, 13),
+    (5, 17),
+    (52, 17),
+    (269, 17),
+    (12, 23),
+    (305, 24),
+    (300, 32),
+    (293, 34),
+    (293, 53),
+];
+
 pub fn draw(s: &mut Screen, cover: &Picture, t: f32) {
     cover.draw(s, t);
     let (ox, oy) = cover.origin();
 
-    // The star above the title twinkles.
-    let r = (((t * 1.7).sin() * 0.5 + 0.5) * 4.0).round() as i32 + 1;
-    sparkle(s, ox + 250, oy + 10, r);
+    // The painted stars twinkle (on top: the bolts beside them must not flicker along).
+    twinkle_stars(s, (ox, oy), &STARS, t);
+    // The painted star on the logo's corner flares.
+    flare(s, (ox + 246, oy + 10), t);
     // The cheese glints, and now and then the cat's eyes do too.
-    glints(s, cover, &[(182, 54), (214, 62), (196, 78)], t, 1.3);
+    glints(s, cover, &[(182, 54), (214, 62), (194, 70)], t, 1.3);
     eye_glint(s, (ox, oy), &[(84, 56), (113, 70)], t);
 
     // Lightning, now and then.

@@ -7,7 +7,7 @@ use crate::gfx::palette as pal;
 use crate::gfx::{H, Screen, W};
 
 use super::blink;
-use super::picture::{Picture, gleam, sparkle};
+use super::picture::{Picture, gleam, hash, soft_cross, sparkle, twinkle_stars};
 
 /// Natively the game closes this long after the farewell appears (or on any key).
 pub const LINGER: f32 = 8.0;
@@ -23,35 +23,19 @@ const STARS: [(i32, i32); 7] = [
     (290, 51),
 ];
 
-/// Stable pseudo-random 0..1 per index.
-fn hash(i: usize, salt: f32) -> f32 {
-    ((i as f32 * 12.9898 + salt * 78.233).sin() * 43_758.547)
-        .fract()
-        .abs()
-}
-
 pub fn draw(s: &mut Screen, pic: &Picture, t: f32) {
     pic.draw(s, t);
     let (ox, oy) = pic.origin();
 
-    // Stars: each on its own rhythm, a faint dot, a tiny cross at its brightest.
-    for (i, &(x, y)) in STARS.iter().enumerate() {
-        let (rate, phase) = (0.8 + hash(i, 1.0) * 1.6, hash(i, 2.0) * 6.3);
-        let b = (t * rate + phase).sin().max(0.0);
-        let (x, y) = (ox + x, oy + y);
-        s.blend(x, y, pal::PALE, 0.15 + 0.4 * b);
-        if b > 0.97 {
-            soft_cross(s, x, y, 0.4);
-        }
-    }
+    twinkle_stars(s, (ox, oy), &STARS, t);
 
     // The lamps along the road up to the castle: now and then one glints softly.
     let warm = |c: pal::Rgb| c.0 > 200 && c.1 > 140 && c.2 < 140;
     let lamps = pic.spots((240, 100, 284, 142), 4, warm);
     for (i, &(x, y)) in lamps.iter().enumerate() {
-        let c = (t * 0.9 + hash(i, 3.0) * 7.0).rem_euclid(7.0);
+        let c = (t * 0.9 + hash(i, 3.0) * 14.0).rem_euclid(14.0);
         if c < 0.15 {
-            soft_cross(s, ox + x, oy + y, 0.55 * (1.0 - c / 0.15));
+            soft_cross(s, ox + x, oy + y, 0.35 * (1.0 - c / 0.15));
         }
     }
 
@@ -66,14 +50,6 @@ pub fn draw(s: &mut Screen, pic: &Picture, t: f32) {
         let (x, y) = (W - w - 6, H - 9);
         s.blend_rect(x - 3, y - 2, w + 6, 9, pal::INK, 0.7);
         font::draw(s, Font::Tiny, x, y, msg, pal::YELLOW_LT);
-    }
-}
-
-/// A small, soft glint: a bright pixel with a faint one-pixel cross, at `strength` 0..1.
-fn soft_cross(s: &mut Screen, x: i32, y: i32, strength: f32) {
-    s.blend(x, y, pal::WHITE, strength);
-    for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-        s.blend(x + dx, y + dy, pal::WHITE, strength * 0.45);
     }
 }
 

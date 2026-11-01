@@ -28,6 +28,8 @@ pub struct Picture {
 /// gentle vertical sway, so the mist breathes without changing its shape.
 pub struct Fog {
     px: Vec<Px>,
+    /// 1 = the farewell's valley; thinner, busier mist needs more.
+    strength: f32,
 }
 
 impl Fog {
@@ -36,9 +38,10 @@ impl Fog {
         for &(x, y, c) in &self.px {
             let sway = (y as f32 * 0.3 + t * 0.6).sin() * 1.1;
             let wisp = 0.5 + 0.5 * (TAU * (x as f32 / 34.0 - t * 0.17) + sway).sin();
+            let k = self.strength;
             let lit = c
-                .lerp(pal::PALE, 0.45 * wisp * wisp)
-                .scale(0.82 + 0.18 * wisp);
+                .lerp(pal::PALE, (0.45 * k * wisp * wisp).min(0.9))
+                .scale(1.0 - 0.18 * k * (1.0 - wisp));
             s.put(ox + x, oy + y, lit);
         }
     }
@@ -251,13 +254,13 @@ impl Picture {
     }
 
     /// Misty pixels (pale, bluish, low saturation) inside `areas` drift like fog.
-    pub fn with_fog(mut self, areas: &[(i32, i32, i32, i32)]) -> Self {
+    pub fn with_fog(mut self, areas: &[(i32, i32, i32, i32)], strength: f32) -> Self {
         let mist = |_, _, c: Rgb| {
             let spread = c.0.max(c.1).max(c.2) - c.0.min(c.1).min(c.2);
             c.2 > c.0 && c.2 > c.1 && (70..220).contains(&luma(c)) && spread < 110
         };
         let px = areas.iter().flat_map(|&r| self.select(r, mist)).collect();
-        self.fog.push(Fog { px });
+        self.fog.push(Fog { px, strength });
         self
     }
 
@@ -327,24 +330,29 @@ impl Picture {
         self
     }
 
-    /// The title: the cheese's sunburst radiates, stars and castle windows twinkle, and the
-    /// lightning bolts blaze on every strike.
+    /// The title: the cheese's sunburst radiates, castle windows twinkle, flags wave, mist
+    /// drifts between the mountains and the lightning bolts blaze on every strike. (Stars twinkle on top, in `title.rs`.)
     pub fn cover() -> Picture {
-        let bright = |c: Rgb| luma(c) > 175 && c.2 as u32 + 10 >= c.0 as u32;
         let lit_window = |c: Rgb| c.0 > 170 && c.1 > 120 && c.2 < 110;
+        // Bolts are bright and bluish; the moon (centred at 270,63) is not a bolt.
         let bolt = |x: i32, y: i32, c: Rgb| {
-            let (dx, dy) = (x - 276, y - 61);
-            c.2 as u32 > c.0 as u32 + 10 && luma(c) > 140 && dx * dx + dy * dy > 18 * 18
+            let (dx, dy) = (x - 270, y - 63);
+            c.2 as u32 > c.0 as u32 + 10 && luma(c) > 140 && dx * dx + dy * dy > 17 * 17
         };
         Picture::parse(include_bytes!("cover.bin"))
             .expect("embedded cover parses")
-            .with_glow((166, 42, 250, 100), (200, 57), 0.35)
-            .with_twinkle((0, 0, 64, 18), 1, 0.85, 2.3, bright)
-            .with_twinkle((290, 0, 320, 48), 1, 0.85, 2.0, bright)
-            .with_twinkle((268, 70, 300, 102), 2, 0.45, 5.0, lit_window)
-            .with_flash((232, 18, 288, 106), 1.0, bolt)
-            .with_flash((266, 0, 320, 26), 1.0, bolt)
-            .with_flash((44, 0, 92, 12), 0.8, bolt)
+            // Two boxes: wide above her head, narrow beside it (her face stays still).
+            .with_glow((148, 38, 234, 70), (198, 60), 0.35)
+            .with_glow((176, 70, 234, 82), (198, 60), 0.35)
+            .with_twinkle((260, 66, 292, 100), 2, 0.45, 5.0, lit_window)
+            .with_flash((230, 16, 288, 106), 1.0, bolt)
+            .with_flash((286, 16, 320, 72), 1.0, bolt)
+            .with_flash((264, 0, 320, 18), 1.0, bolt)
+            .with_flash((44, 0, 112, 18), 0.8, bolt)
+            .with_fog(&[(0, 112, 120, 175), (205, 112, 320, 178)], 1.9)
+            .with_flutter(&[(279, 60, 290, 67), (249, 89, 258, 96)], |c| {
+                c.0 > 140 && c.0 as u32 > 2 * c.1 as u32 && c.0 as u32 * 2 > 3 * c.2 as u32
+            })
     }
 
     /// Episode 1: the sun's rays and the cheese radiate; the storm cloud flashes.
@@ -393,9 +401,9 @@ impl Picture {
             .with_flutter(&[(258, 72, 266, 77)], |c| {
                 c.0 > 120 && c.0 as u32 > 2 * c.1 as u32 && c.0 as u32 * 2 > 3 * c.2 as u32
             })
-            .with_twinkle((244, 78, 272, 102), 2, 0.45, 5.0, warm)
-            .with_twinkle((240, 100, 284, 142), 2, 0.5, 4.0, warm)
-            .with_fog(&[(165, 125, 320, 195), (0, 110, 60, 170)])
+            .with_twinkle((244, 78, 272, 102), 2, 0.2, 2.5, warm)
+            .with_twinkle((240, 100, 284, 142), 2, 0.2, 2.5, warm)
+            .with_fog(&[(165, 125, 320, 195), (0, 110, 60, 170)], 1.0)
     }
 
     /// Caught: the cheese, just out of reach, glows.
@@ -558,6 +566,36 @@ pub fn flare(s: &mut Screen, (x, y): (i32, i32), t: f32) {
     }
 }
 
+/// Stable pseudo-random 0..1 per index (for desynchronising effects).
+pub fn hash(i: usize, salt: f32) -> f32 {
+    ((i as f32 * 12.9898 + salt * 78.233).sin() * 43_758.547)
+        .fract()
+        .abs()
+}
+
+/// A small, soft glint: a bright pixel with a faint one-pixel cross, at `strength` 0..1.
+pub fn soft_cross(s: &mut Screen, x: i32, y: i32, strength: f32) {
+    s.blend(x, y, pal::WHITE, strength);
+    for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+        s.blend(x + dx, y + dy, pal::WHITE, strength * 0.45);
+    }
+}
+
+/// Stars at fixed points (picture pixels), each twinkling on its own rhythm: a faint dot
+/// that brightens, with a tiny cross at its brightest. Drawn on top, so nothing painted
+/// around them (bolts, clouds) ever flickers along.
+pub fn twinkle_stars(s: &mut Screen, (ox, oy): (i32, i32), stars: &[(i32, i32)], t: f32) {
+    for (i, &(x, y)) in stars.iter().enumerate() {
+        let (rate, phase) = (0.8 + hash(i, 1.0) * 1.6, hash(i, 2.0) * 6.3);
+        let b = (t * rate + phase).sin().max(0.0);
+        let (x, y) = (ox + x, oy + y);
+        s.blend(x, y, pal::PALE, 0.15 + 0.4 * b);
+        if b > 0.97 {
+            soft_cross(s, x, y, 0.4);
+        }
+    }
+}
+
 /// Glints hopping between `spots` (picture pixels): one at a time, then a pause.
 pub fn glints(s: &mut Screen, pic: &Picture, spots: &[(i32, i32)], t: f32, rate: f32) {
     let (ox, oy) = pic.origin();
@@ -628,6 +666,12 @@ mod tests {
             .map(|f| f.px.len())
             .sum();
         assert!((60..=130).contains(&flags), "{flags} episode 2 flag pixels");
+    }
+
+    #[test]
+    fn title_has_fog() {
+        let fog: usize = Picture::cover().fog.iter().map(|f| f.px.len()).sum();
+        assert!((800..=4000).contains(&fog), "{fog} fog pixels");
     }
 
     #[test]
