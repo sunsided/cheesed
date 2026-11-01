@@ -26,6 +26,12 @@ tasks:
     cmds:
       - cargo run {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
 
+  run:cheese:
+    desc: Run in testing mode (all levels unlocked; level menu I = episode intro, E = ending)
+    aliases: [cheese]
+    cmds:
+      - cargo run {{.PROFILE_FLAG}} -- --cheese {{.CLI_ARGS}}
+
   build:
     desc: Build (PROFILE=debug|release)
     cmds:
@@ -47,11 +53,16 @@ tasks:
       - cargo run -q --release --example snapshot -- snapshots
 
   cover:
-    desc: Re-convert art/cover.png into the title picture (src/render/cover.bin; needs Pillow)
-    sources: [art/cover.png, tools/cover.py]
-    generates: [src/render/cover.bin]
+    desc: Re-convert the paintings in art/ into the embedded 256-color pictures (needs Pillow)
+    sources: [art/*.png, tools/cover.py]
+    generates: [src/render/cover.bin, src/render/intro1.bin, src/render/intro2.bin, src/render/intro3.bin, src/render/victory.bin]
     cmds:
       - python3 tools/cover.py art/cover.png src/render/cover.bin
+      - python3 tools/cover.py art/intro-episode-1.png src/render/intro1.bin
+      - python3 tools/cover.py art/intro-episode-2.png src/render/intro2.bin
+      - python3 tools/cover.py art/intro-episode-3.png src/render/intro3.bin
+      - python3 tools/cover.py art/victory-episode-1.png src/render/victory.bin
+      - rm -f src/render/*.preview.png
 
   fmt:
     desc: Format sources

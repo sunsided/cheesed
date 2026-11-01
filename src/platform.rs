@@ -1,4 +1,6 @@
-//! Saving progress: a file in the user's data directory natively, `localStorage` on the web.
+//! The few things that differ between native and the browser: launch options (command-line
+//! flags natively, the URL query on the web) and saving progress (a file in the user's data
+//! directory natively, `localStorage` on the web).
 //!
 //! Progress is the best move count per level, keyed by level title so reordering or adding
 //! levels keeps old records. Stored as `title<TAB>moves` lines.
@@ -6,6 +8,33 @@
 use std::collections::HashMap;
 
 use crate::logic::Level;
+
+/// Launch options: `--cheese` natively, `?cheese` in the browser.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Options {
+    /// Testing mode: every level unlocked, and the level menu can jump to the episode
+    /// intro (`I`) and ending (`E`).
+    pub cheese: bool,
+}
+
+impl Options {
+    /// Parse flags or query pairs (`--cheese`, `cheese`, `cheese=1`).
+    pub fn parse<'a>(args: impl IntoIterator<Item = &'a str>) -> Self {
+        let mut o = Options::default();
+        for arg in args {
+            let arg = arg.trim_start_matches('-');
+            let (key, value) = arg.split_once('=').unwrap_or((arg, ""));
+            if key.eq_ignore_ascii_case("cheese") {
+                o.cheese = !matches!(value, "0" | "false" | "no");
+            }
+        }
+        o
+    }
+
+    pub fn load() -> Self {
+        imp::options()
+    }
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Progress {
@@ -55,6 +84,11 @@ impl Progress {
 mod imp {
     use std::path::PathBuf;
 
+    pub fn options() -> super::Options {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        super::Options::parse(args.iter().map(String::as_str))
+    }
+
     fn path() -> Option<PathBuf> {
         Some(dirs::data_dir()?.join("cheese").join("progress.txt"))
     }
@@ -78,6 +112,13 @@ mod imp {
 mod imp {
     const KEY: &str = "cheese.progress";
 
+    pub fn options() -> super::Options {
+        let search = web_sys::window()
+            .and_then(|w| w.location().search().ok())
+            .unwrap_or_default();
+        super::Options::parse(search.trim_start_matches('?').split('&'))
+    }
+
     fn storage() -> Option<web_sys::Storage> {
         web_sys::window()?.local_storage().ok()?
     }
@@ -96,6 +137,15 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn options_parse() {
+        assert!(Options::parse(["--cheese"]).cheese);
+        assert!(Options::parse(["foo=1", "cheese"]).cheese);
+        assert!(!Options::parse(["cheese=0"]).cheese);
+        assert!(!Options::parse(["--cheesy"]).cheese);
+        assert!(!Options::parse([]).cheese);
+    }
 
     #[test]
     fn round_trips_and_keeps_the_best() {

@@ -14,8 +14,6 @@ pub struct Art {
     pub mouse_up: [Sprite; 2],
     /// Squashed flat, under a paw.
     pub mouse_caught: Sprite,
-    /// Sitting upright, facing right (the ending).
-    pub mouse_sit: Sprite,
     pub wedge: Sprite,
     pub wheel: Sprite,
     pub brie: Sprite,
@@ -48,7 +46,6 @@ impl Art {
                 feet_swapped(Sprite::parse(MOUSE_UP)),
             ],
             mouse_caught: Sprite::parse(MOUSE_CAUGHT),
-            mouse_sit: Sprite::parse(MOUSE_SIT),
             wedge: Sprite::parse(WEDGE),
             wheel: Sprite::parse(WHEEL),
             brie: Sprite::parse(BRIE),
@@ -266,25 +263,6 @@ const MOUSE_CAUGHT: &str = "
     ..kkkkkkkkkkkk..
 ";
 
-const MOUSE_SIT: &str = "
-    ....kkkk........
-    ...kPPPPk.......
-    ..kPPPPPPk......
-    ..kPPPPPkkkkk...
-    ...kPPkkAAAAAk..
-    ....kkAAAAAAAAk.
-    ...kAAAAAAkkAAk.
-    ...kAAAAAAkwAAk.
-    ...kaAAAPPAAAAPk
-    ...kaaaAAAAAAkk.
-    ...kaaaaaaAk....
-    ...kaaaaaAPk....
-    ...kzaaaaaak....
-    ..kPkzzzzzk.....
-    ..kP.kPkkPk.....
-    ...kPk..........
-";
-
 const WEDGE: &str = "
     ................
     ................
@@ -448,7 +426,7 @@ mod tests {
             .chain(&a.mouse_down)
             .chain(&a.mouse_up)
             .chain(&a.cat_right)
-            .chain([&a.cat_pounce, &a.mouse_caught, &a.mouse_sit])
+            .chain([&a.cat_pounce, &a.mouse_caught])
         {
             assert_eq!((s.w, s.h), (16, 16));
         }

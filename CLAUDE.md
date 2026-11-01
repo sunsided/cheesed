@@ -317,6 +317,11 @@ See README.md for the rules. Sister project of `../cookie-doh` (same architectur
   `task solve` (or `task solve FILE=x.txt`) prints optimum + solution while designing.
   Geometry traps: cheese next to an outer wall can't leave it; brie needs a backstop behind
   its hole; a wheel needs run-up + push spot + wheel in a straight line.
+- Testing mode: `--cheese` (web: `?cheese`, `task run:cheese`) unlocks every level; in the
+  level menu `I` opens the episode intro card (`I` again flips through episodes 2 and 3, baked
+  in for the nonexistent registered version) and `E` the ending (`platform::Options`).
+- Episode flow: starting level 1 from the menu shows the intro card (`art/intro-episode-1.png`,
+  still over the title rock); Space starts the level and the music box takes over.
 - Board limit: 20x11 tiles (`render::MAX_COLS` / `MAX_ROWS`).
 - `src/gfx/` + `src/render/`: everything draws into a 320x200 `Screen` (CPU), which `app.rs`
   uploads as one texture each frame with integer scaling. Don't draw game content with the
@@ -325,11 +330,24 @@ See README.md for the rules. Sister project of `../cookie-doh` (same architectur
   `Sprite::parse` asserts equal row widths, and `art::tests` parses them all.
 - Turn animation: `render::anim::Anim` tweens from the previous `State` to the current one;
   cheese sinks into a hole as it arrives (`SINK`), filled holes use `art.hole_full`.
-- `src/sound/`: all audio synthesized (`sfx::Bank`), no asset files, no music yet.
-- Title screen (`render/title.rs`) shows the official cover `art/cover.png`, reduced to a
-  256-color 320x200 picture by `task cover` (`tools/cover.py`, needs Pillow) into
-  `src/render/cover.bin` (embedded via `include_bytes!`), with twinkle/glint/lightning drawn
-  over it. Re-run `task cover` after changing the painting. The level menu plays the
+- `src/sound/`: all audio synthesized, no asset files. Music: `tracker` (cookie-doh's, plus
+  `drive` overdrive, `power` chords and a `c` crash) plays `songs::title()` (chiptune metal,
+  title + menu) `songs::game()` (a dainty music-box minuet - the deliberate letdown) and `songs::extro()`
+  (the title riff turned triumphant, E major, on the episode ending).
+  SFX are pre-rendered PCM in `sfx::Bank`; the title's thunder is cued by
+  `render::title::struck` so it lands on the lightning flash. `task snapshot` also writes
+  the music and thunder as WAVs.
+- Paintings (`render/picture.rs`): the title cover `art/cover.png`, the episode-one intro
+  `art/intro-episode-1.png` / `-2.png` / `-3.png` and ending `art/victory-episode-1.png` are reduced to 256-color 320x200 pictures by
+  `task cover` (`tools/cover.py`, needs Pillow) into `src/render/*.bin`, embedded via
+  `include_bytes!`. `render/title.rs` and `render/ending.rs` draw a little life over them
+  (sparkles, glints, lightning). Effect layers on `Picture` animate the painting's own
+  pixels: `with_water` (fake VGA color cycling: bands marching along a brightness ramp),
+  `with_glow` (warm pixels pulse in rings from a center), `with_twinkle` (stars, candle-lit
+  windows) and `with_flash` (bolts/clouds blaze on `title::flash_strength`, thunder via
+  `title::struck` on the title and the episode 1 intro). Rects are hand-placed in picture
+  pixels. Re-run `task cover`
+  after changing a painting (and re-check the water rectangles if the composition moved). The level menu plays the
   shareware joke (locked episodes, `order_form`); keep it silly.
 - Brie leaves cosmetic `render::Trail`s (app-side, wiped on undo past their turn).
 - `src/platform.rs`: progress (best moves per level title) in the data dir / `localStorage`.

@@ -3,7 +3,10 @@
 
 pub mod anim;
 pub mod art;
+pub mod ending;
 pub mod fx;
+pub mod intro;
+pub mod picture;
 pub mod title;
 
 use std::sync::Arc;
@@ -64,6 +67,8 @@ pub struct SelectView<'a> {
     pub unlocked: usize,
     /// Showing the (pretend) order form for the full version.
     pub order: bool,
+    /// Testing mode (`--cheese`): advertise its shortcuts.
+    pub cheese: bool,
     pub t: f32,
 }
 
@@ -155,7 +160,10 @@ pub fn select_move(count: usize, cursor: usize, dir: Dir) -> usize {
 
 pub struct Renderer {
     art: Art,
-    cover: title::Cover,
+    cover: picture::Picture,
+    /// Episode intro cards, episode 1 first.
+    intros: [picture::Picture; intro::EPISODES],
+    victory: picture::Picture,
 }
 
 impl Default for Renderer {
@@ -168,7 +176,13 @@ impl Renderer {
     pub fn new() -> Self {
         Self {
             art: Art::new(),
-            cover: title::Cover::embedded(),
+            cover: picture::Picture::cover(),
+            intros: [
+                picture::Picture::intro_episode_1(),
+                picture::Picture::intro_episode_2(),
+                picture::Picture::intro_episode_3(),
+            ],
+            victory: picture::Picture::victory_episode_1(),
         }
     }
 
@@ -618,7 +632,7 @@ impl Renderer {
                 s.bevel(x, y, w, h, pal::SLATE, pal::NIGHT, pal::NAVY);
             }
             s.blit(&self.art.lock, x + 3, y + 2);
-            let label = format!("EP. {}: {name}", k + 2);
+            let label = format!("{}. {name}", k + 2);
             font::draw(
                 s,
                 Font::Normal,
@@ -661,14 +675,15 @@ impl Renderer {
         };
         font::draw_centered_shadow(s, Font::Normal, W / 2, y + 6, &name, pal::YELLOW, pal::INK);
         font::draw_centered(s, Font::Tiny, W / 2, y + 18, &rec, pal::PALE);
-        font::draw_centered(
-            s,
-            Font::Tiny,
-            W / 2,
-            y + 28,
-            "ARROWS PICK  SPACE PLAY  ESC TITLE",
-            pal::STEEL_LT,
-        );
+        let (help, color) = if v.cheese {
+            (
+                "ARROWS PICK  SPACE PLAY  ESC TITLE  -  CHEESE MODE: I INTRO  E ENDING",
+                pal::PINK,
+            )
+        } else {
+            ("ARROWS PICK  SPACE PLAY  ESC TITLE", pal::STEEL_LT)
+        };
+        font::draw_centered(s, Font::Tiny, W / 2, y + 28, help, color);
 
         if v.order {
             order_form(s, v.t);
@@ -681,170 +696,15 @@ impl Renderer {
         title::draw(s, &self.cover, t);
     }
 
-    /// The ending: the mouse at home, at the table, with a birthday cheesecake.
+    /// The card before an episode's first level (`episode` is 1-based).
+    pub fn draw_intro(&self, s: &mut Screen, episode: usize, t: f32) {
+        let i = episode.clamp(1, intro::EPISODES);
+        intro::draw(s, &self.intros[i - 1], i, t);
+    }
+
+    /// The end of episode one.
     pub fn draw_end(&self, s: &mut Screen, earned: u32, max: u32, t: f32) {
-        const FLOOR_Y: i32 = 158;
-        // Striped wallpaper, a baseboard, floorboards.
-        for x in 0..W {
-            let c = if (x / 6) % 2 == 0 {
-                pal::PURPLE_DK
-            } else {
-                pal::Rgb::hex(0x4a2268)
-            };
-            s.vline(x, 0, FLOOR_Y - 1, c);
-        }
-        for x in (3..W).step_by(12) {
-            for y in (6..FLOOR_Y - 8).step_by(14) {
-                s.put(x, y + (x / 12) % 2 * 7, pal::MAGENTA);
-            }
-        }
-        for tx in 0..W / TILE {
-            for ty in 0..3 {
-                s.blit(
-                    &self.art.floor[((tx + ty) % 2) as usize],
-                    tx * TILE,
-                    FLOOR_Y + ty * TILE,
-                );
-            }
-        }
-        s.fill_rect(0, FLOOR_Y - 6, W, 6, pal::BROWN);
-        s.hline(0, W - 1, FLOOR_Y - 6, pal::WOOD_LT);
-        s.blend_rect(0, FLOOR_Y, W, 3, pal::INK, 0.5);
-
-        // A window with a full moon. It looks suspiciously like cheese.
-        let (wx, wy, ww, wh) = (22, 64, 58, 52);
-        s.fill_rect(wx - 3, wy - 3, ww + 6, wh + 6, pal::BROWN_DK);
-        s.gradient_rect(wx, wy, ww, wh, pal::NAVY, pal::BLUE_DK, 5);
-        for (i, (sx, sy)) in [(6, 8), (40, 6), (15, 30), (50, 40), (30, 44)]
-            .iter()
-            .enumerate()
-        {
-            if ((t * 1.3 + i as f32) as i32) % 4 != 0 {
-                s.put(wx + sx, wy + sy, pal::PALE);
-            }
-        }
-        s.fill_circle(wx + 36, wy + 20, 9, pal::YELLOW);
-        s.fill_circle(wx + 33, wy + 18, 2, pal::CHEESE_DK);
-        s.fill_circle(wx + 39, wy + 24, 1, pal::CHEESE_DK);
-        s.vline(wx + ww / 2, wy, wy + wh - 1, pal::BROWN_DK);
-        s.hline(wx, wx + ww - 1, wy + wh / 2, pal::BROWN_DK);
-        s.fill_rect(wx - 6, wy + wh + 3, ww + 12, 4, pal::WOOD);
-
-        // The chair, with the mouse on it.
-        let (cx, seat_y) = (124, 128);
-        s.fill_rect(cx, seat_y - 34, 4, 34, pal::BROWN); // backrest post
-        s.fill_rect(cx, seat_y - 34, 4, 2, pal::WOOD_LT);
-        s.fill_rect(cx + 4, seat_y - 30, 2, 4, pal::BROWN_DK);
-        s.fill_rect(cx + 4, seat_y - 20, 2, 4, pal::BROWN_DK);
-        s.fill_rect(cx, seat_y, 34, 5, pal::WOOD);
-        s.hline(cx, cx + 33, seat_y, pal::WOOD_LT);
-        s.fill_rect(cx + 1, seat_y + 5, 3, FLOOR_Y - seat_y - 5, pal::BROWN);
-        s.fill_rect(cx + 30, seat_y + 5, 3, FLOOR_Y - seat_y - 5, pal::BROWN);
-        let bob = i32::from((t * 1.5) as i32 % 2 == 0);
-        s.blit_scaled(&self.art.mouse_sit, cx + 2, seat_y - 30 - bob, 2, false);
-
-        // The table.
-        let (tx, top_y, tw) = (160, 116, 104);
-        s.fill_rect(tx, top_y, tw, 6, pal::WOOD_LT);
-        s.hline(tx, tx + tw - 1, top_y, pal::WOOD_HI);
-        s.fill_rect(tx, top_y + 6, tw, 3, pal::BROWN);
-        s.fill_rect(tx + 6, top_y + 9, 5, FLOOR_Y - top_y - 9, pal::BROWN);
-        s.fill_rect(tx + tw - 11, top_y + 9, 5, FLOOR_Y - top_y - 9, pal::BROWN);
-        s.blend_rect(tx + 4, FLOOR_Y, tw - 8, 2, pal::INK, 0.4);
-
-        // The cheesecake on its plate, with one birthday candle.
-        let ccx = tx + 34;
-        s.fill_ellipse(ccx, top_y - 1, 26, 3, pal::PALE);
-        s.fill_ellipse(ccx, top_y - 2, 22, 2, pal::WHITE);
-        let (body_top, body_bot, r) = (top_y - 22, top_y - 3, 19);
-        s.fill_rect(
-            ccx - r,
-            body_top,
-            2 * r + 1,
-            body_bot - body_top,
-            pal::YELLOW,
-        );
-        s.fill_ellipse(ccx, body_bot, r, 4, pal::YELLOW);
-        s.fill_rect(ccx - r, body_bot - 6, 2 * r + 1, 4, pal::CHEESE_DK); // biscuit base
-        s.fill_ellipse(ccx, body_bot, r, 4, pal::CHEESE_DK);
-        s.fill_ellipse(ccx, body_top, r, 5, pal::YELLOW_LT);
-        for (hx, hy) in [(-12, 8), (-3, 12), (9, 7), (13, 13), (-15, 14)] {
-            s.fill_rect(ccx + hx, body_top + hy, 3, 2, pal::CHEESE_DK);
-        }
-        for (hx, hy) in [(-8, -1), (6, 1)] {
-            s.fill_ellipse(ccx + hx, body_top + hy, 2, 1, pal::YELLOW);
-        }
-        // Candle: red and white stripes, flickering flame and glow.
-        let (kx, ky) = (ccx - 1, body_top - 12);
-        for y in 0..12 {
-            let c = if (y / 2) % 2 == 0 {
-                pal::WHITE
-            } else {
-                pal::RED
-            };
-            s.fill_rect(kx, ky + y, 3, 1, c);
-        }
-        s.put(kx + 1, ky - 1, pal::INK);
-        let flick = ((t * 11.0).sin() * 1.2).round() as i32;
-        let glow = 0.18 + 0.06 * (t * 7.0).sin();
-        for (rr, a) in [(14, glow * 0.6), (9, glow)] {
-            for dy in -rr..=rr {
-                for dx in -rr..=rr {
-                    if dx * dx + dy * dy <= rr * rr {
-                        s.blend(kx + 1 + dx, ky - 5 + dy, pal::YELLOW_LT, a);
-                    }
-                }
-            }
-        }
-        s.fill_rect(kx + flick.min(0), ky - 6, 3, 4, pal::ORANGE);
-        s.fill_rect(kx + 1 + flick.max(0) / 2, ky - 8, 1, 6, pal::YELLOW);
-        s.put(kx + 1, ky - 3, pal::YELLOW_LT);
-        // A wedge waiting its turn.
-        s.blit(&self.art.wedge, tx + 70, top_y - 16);
-
-        // Words.
-        font::draw_outlined(
-            s,
-            Font::Normal,
-            W / 2 - Font::Normal.measure("HAPPY CHEESE DAY!", 2) / 2,
-            8,
-            "HAPPY CHEESE DAY!",
-            2,
-            &|row| pal::YELLOW_LT.lerp(pal::CHEESE_DK, row as f32 / 6.0),
-            pal::INK,
-        );
-        font::draw_centered_shadow(
-            s,
-            Font::Normal,
-            W / 2,
-            30,
-            "EVERY HOLE FILLED. TIME FOR CAKE.",
-            pal::PALE,
-            pal::INK,
-        );
-        let line = format!("STARS {earned} / {max}");
-        font::draw_centered_shadow(s, Font::Normal, W / 2, 44, &line, pal::YELLOW, pal::INK);
-        if earned < max {
-            font::draw_centered(
-                s,
-                Font::Tiny,
-                W / 2,
-                55,
-                "PAR IS ALWAYS POSSIBLE - GO BACK FOR MORE STARS!",
-                pal::PALE,
-            );
-        }
-        if blink(t) {
-            font::draw_centered_shadow(
-                s,
-                Font::Normal,
-                W / 2,
-                182,
-                "PRESS SPACE",
-                pal::YELLOW,
-                pal::INK,
-            );
-        }
+        ending::draw(s, &self.victory, earned, max, t);
     }
 }
 

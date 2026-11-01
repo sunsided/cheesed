@@ -112,6 +112,8 @@ pub enum Drum {
     Kick,
     Snare,
     Hat,
+    /// A long, washy cymbal crash.
+    Crash,
 }
 
 /// A playing drum hit.
@@ -148,11 +150,15 @@ impl DrumVoice {
                 (self.noise.sample(9000.0) * 0.7 + tone * 0.5) * env
             }
             Drum::Hat => self.noise.sample(20000.0) * (-t * 90.0).exp() * 0.5,
+            Drum::Crash => {
+                let shimmer = 1.0 + 0.3 * (t * 37.0).sin();
+                self.noise.sample(17000.0 * shimmer) * (-t * 2.6).exp() * 0.45
+            }
         }
     }
 
     pub fn done(&self) -> bool {
-        self.t > 0.4
+        self.t > if self.drum == Drum::Crash { 1.8 } else { 0.4 }
     }
 }
 

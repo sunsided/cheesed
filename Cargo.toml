@@ -18,7 +18,7 @@ env_logger = "0.11"
 dirs = "6"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3", features = ["Window", "Storage"] }
+web-sys = { version = "0.3", features = ["Window", "Storage", "Location"] }
 
 # Optimize dependencies even in dev builds; our own code still compiles fast.
 [profile.dev.package."*"]

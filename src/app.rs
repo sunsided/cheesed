@@ -6,14 +6,18 @@ use game_toolkit::prelude::*;
 
 use crate::gfx::{H, Screen, W};
 use crate::logic::{CheeseKind, Dir, Event, Level, Pos, Status, World, levels, stars};
-use crate::platform::Progress;
+use crate::platform::{Options, Progress};
 use crate::render::anim::Anim;
 use crate::render::fx::Fx;
+use crate::render::title;
 use crate::render::{self, PlayView, Renderer, SelectView, Trail};
-use crate::sound::{SAMPLE_RATE, sfx};
+use crate::sound::tracker::Player;
+use crate::sound::{SAMPLE_RATE, sfx, songs};
 
 pub const CANVAS_ID: &str = "cheese";
 const SFX_VOLUME: f32 = 0.6;
+const ROCK_VOLUME: f32 = 0.42;
+const MINUET_VOLUME: f32 = 0.55;
 /// Holding a direction: first repeat after this long, then every `REPEAT_EVERY`.
 const REPEAT_DELAY: f32 = 0.24;
 const REPEAT_EVERY: f32 = 0.12;
@@ -22,6 +26,8 @@ const REPEAT_EVERY: f32 = 0.12;
 enum Mode {
     Title,
     Select,
+    /// The episode's title card, before its first level.
+    Intro,
     Play,
     End,
 }
@@ -54,6 +60,63 @@ impl Viewport {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Tune {
+    /// The title and menus: heroic chiptune rock.
+    Rock,
+    /// The game itself: a music box. Deflating, on purpose.
+    Minuet,
+    /// The episode ending: the epic, back and in major.
+    Extro,
+}
+
+/// The music stream: one song at a time, synthesized on the audio thread.
+#[derive(Default)]
+struct Music {
+    handle: Option<StreamHandle>,
+    tune: Option<Tune>,
+    volume: f32,
+}
+
+impl Music {
+    /// Switch to `tune` unless it's already playing.
+    fn play(&mut self, audio: &mut Option<Audio>, tune: Tune) {
+        if self.tune == Some(tune) {
+            return;
+        }
+        if let Some(h) = self.handle.take() {
+            h.stop();
+        }
+        self.tune = Some(tune);
+        let Some(audio) = audio else { return };
+        let song = match tune {
+            Tune::Rock => songs::title(),
+            Tune::Minuet => songs::game(),
+            Tune::Extro => songs::extro(),
+        };
+        let mut player = Player::new(song);
+        let stream = move |out: &mut [f32]| player.fill(out);
+        // Deferred: on the web it waits for the first key press or tap.
+        match audio.play_stream_with(
+            stream,
+            SAMPLE_RATE,
+            PlayOptions::default().volume(self.volume).deferred(),
+        ) {
+            Ok(h) => self.handle = Some(h),
+            Err(e) => log::warn!("music: {e}"),
+        }
+    }
+
+    fn set_volume(&mut self, v: f32) {
+        if (v - self.volume).abs() > 1e-3 {
+            self.volume = v;
+            if let Some(h) = &self.handle {
+                h.set_volume(v);
+            }
+        }
+    }
+}
+
 /// What the player asked for this frame, from keyboard, gamepad or pointer.
 #[derive(Default)]
 struct Intent {
@@ -75,6 +138,12 @@ pub struct Cheese {
     viewport: Viewport,
     mode: Mode,
     t: f32,
+    options: Options,
+    /// Which episode's intro card is showing (1-based).
+    intro_episode: usize,
+    /// Seconds on the title screen, which times the lightning and its thunder.
+    title_t: f32,
+    music: Music,
     levels: &'static [Arc<Level>],
     progress: Progress,
     /// Level-select cursor; also the level being played.
@@ -118,6 +187,9 @@ impl Cheese {
 
     /// Levels `0..n` are playable: everything up to and including the first unsolved one.
     fn unlocked(&self) -> usize {
+        if self.options.cheese {
+            return self.levels.len();
+        }
         self.levels
             .iter()
             .position(|l| self.progress.best(l).is_none())
@@ -213,6 +285,7 @@ impl Cheese {
 
     fn goto_title(&mut self) {
         self.mode = Mode::Title;
+        self.title_t = 0.0;
     }
 
     fn goto_select(&mut self) {
@@ -237,7 +310,12 @@ impl Cheese {
         self.mode = Mode::Play;
     }
 
-    fn update_title(&mut self, ctx: &mut Context, it: &Intent) {
+    fn update_title(&mut self, ctx: &mut Context, it: &Intent, dt: f32) {
+        let t0 = self.title_t;
+        self.title_t += dt;
+        if title::struck(t0, self.title_t) {
+            self.sound(&mut ctx.audio, &self.sfx.thunder, 1.0);
+        }
         if it.confirm || it.tap.is_some() {
             self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
             self.cursor = self.first_unsolved();
@@ -276,12 +354,54 @@ impl Cheese {
                 self.sound(&mut ctx.audio, &self.sfx.fanfare, 0.7);
             } else if self.cursor < self.unlocked() {
                 self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
-                self.start_level(self.cursor);
+                if self.cursor == 0 {
+                    // The episode begins: its title card first.
+                    self.show_intro(1);
+                } else {
+                    self.start_level(self.cursor);
+                }
             } else {
                 self.sound(&mut ctx.audio, &self.sfx.nope, 1.0);
             }
         } else if it.back {
             self.goto_title();
+        } else if self.options.cheese && ctx.input.key_pressed(Key::KeyI) {
+            self.show_intro(1);
+        } else if self.options.cheese && ctx.input.key_pressed(Key::KeyE) {
+            self.mode = Mode::End;
+            self.end_t = 0.0;
+        }
+    }
+
+    fn show_intro(&mut self, episode: usize) {
+        self.intro_episode = episode;
+        self.mode = Mode::Intro;
+        self.end_t = 0.0;
+    }
+
+    fn update_intro(&mut self, ctx: &mut Context, it: &Intent, dt: f32) {
+        let t0 = self.end_t;
+        self.end_t += dt;
+        // Episode one's storm cloud flashes on the title's schedule: thunder too.
+        if self.intro_episode == 1 && title::struck(t0, self.end_t) {
+            self.sound(&mut ctx.audio, &self.sfx.thunder, 0.8);
+        }
+        if it.back {
+            self.goto_select();
+        } else if self.options.cheese && ctx.input.key_pressed(Key::KeyI) {
+            // Testing: flip through the episode cards.
+            self.show_intro(self.intro_episode % render::intro::EPISODES + 1);
+            self.sound(&mut ctx.audio, &self.sfx.menu, 0.6);
+        } else if self.end_t > 0.4 && (it.confirm || it.tap.is_some()) {
+            self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
+            if self.intro_episode == 1 {
+                self.start_level(0);
+            } else {
+                // Later episodes are "registered version only": straight to the order form.
+                self.goto_select();
+                self.cursor = self.levels.len() + self.intro_episode - 2;
+                self.order = true;
+            }
         }
     }
 
@@ -313,7 +433,6 @@ impl Cheese {
                 } else {
                     self.mode = Mode::End;
                     self.end_t = 0.0;
-                    self.sound(&mut ctx.audio, &self.sfx.fanfare, 1.0);
                 }
                 return;
             }
@@ -480,6 +599,13 @@ impl Game for Cheese {
             viewport: Viewport::fit(ww, wh),
             mode: Mode::Title,
             t: 0.0,
+            options: Options::load(),
+            intro_episode: 1,
+            title_t: 0.0,
+            music: Music {
+                volume: ROCK_VOLUME,
+                ..Default::default()
+            },
             levels,
             progress: Progress::load(),
             cursor: 0,
@@ -518,14 +644,27 @@ impl Game for Cheese {
         }
         let it = self.read_intent(&ctx.input, dt);
         match self.mode {
-            Mode::Title => self.update_title(ctx, &it),
+            Mode::Title => self.update_title(ctx, &it, dt),
             Mode::Select => self.update_select(ctx, &it),
             Mode::Play => self.update_play(ctx, &it, dt),
+            Mode::Intro => self.update_intro(ctx, &it, dt),
             Mode::End => self.update_end(ctx, &it, dt),
         }
         if !self.paused {
             self.fx.update(dt);
         }
+        let tune = match self.mode {
+            Mode::Title | Mode::Select | Mode::Intro => Tune::Rock,
+            Mode::Play => Tune::Minuet,
+            Mode::End => Tune::Extro,
+        };
+        let volume = match (self.paused, tune) {
+            (true, _) => 0.0,
+            (false, Tune::Rock | Tune::Extro) => ROCK_VOLUME,
+            (false, Tune::Minuet) => MINUET_VOLUME,
+        };
+        self.music.set_volume(volume);
+        self.music.play(&mut ctx.audio, tune);
     }
 
     fn event(&mut self, _ctx: &mut Context, e: &GameEvent) {
@@ -538,7 +677,7 @@ impl Game for Cheese {
 
     fn render(&mut self, ctx: &mut Context, frame: &mut Frame) {
         match self.mode {
-            Mode::Title => self.renderer.draw_title(&mut self.screen, self.t),
+            Mode::Title => self.renderer.draw_title(&mut self.screen, self.title_t),
             Mode::Select => {
                 let best = self.best();
                 let view = SelectView {
@@ -547,6 +686,7 @@ impl Game for Cheese {
                     cursor: self.cursor,
                     unlocked: self.unlocked(),
                     order: self.order,
+                    cheese: self.options.cheese,
                     t: self.t,
                 };
                 self.renderer.draw_select(&mut self.screen, &view);
@@ -564,6 +704,10 @@ impl Game for Cheese {
                     trails: &self.trails,
                 };
                 self.renderer.draw_play(&mut self.screen, &view);
+            }
+            Mode::Intro => {
+                self.renderer
+                    .draw_intro(&mut self.screen, self.intro_episode, self.end_t)
             }
             Mode::End => {
                 let earned: u32 = self

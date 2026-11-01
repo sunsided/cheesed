@@ -26,6 +26,8 @@ pub struct Bank {
     pub confirm: Vec<f32>,
     pub nope: Vec<f32>,
     pub fanfare: Vec<f32>,
+    /// The crack and roll of thunder, for the title's lightning.
+    pub thunder: Vec<f32>,
 }
 
 impl Bank {
@@ -52,6 +54,7 @@ impl Bank {
                 Wave::Pulse(0.25),
                 0.6,
             ),
+            thunder: thunder(),
         }
     }
 }
@@ -152,6 +155,27 @@ fn plop() -> Vec<f32> {
     pop
 }
 
+fn thunder() -> Vec<f32> {
+    // A sharp crack, then a low rumble that rolls (amplitude wobbles) and fades.
+    let secs = 3.2;
+    let mut crack = Noise::default();
+    let mut rumble = Noise::default();
+    let mut sub = Noise::default();
+    let mut boom = Osc::default();
+    let mut buf = render(secs, |t| {
+        let c = crack.sample(16000.0) * (-t * 22.0).exp();
+        let roll = 0.6 + 0.4 * (t * 7.0).sin() * (t * 2.3).cos();
+        let swell = (t * 6.0).min(1.0) * (-(t - 0.15).max(0.0) * 1.1).exp();
+        let r = (rumble.sample(700.0 - 300.0 * (t / secs)) * 0.7 + sub.sample(180.0) * 0.6)
+            * roll
+            * swell;
+        let b = boom.sample(Wave::Triangle, 38.0 + 30.0 * (-t * 6.0).exp()) * (-t * 2.5).exp();
+        c * 0.9 + r + b * 0.8
+    });
+    normalize(&mut buf, 0.95);
+    buf
+}
+
 fn meow() -> Vec<f32> {
     // "Mee-OW": up, then down, nasal and wobbly, then a hiss.
     let secs = 0.55;
@@ -191,6 +215,7 @@ mod tests {
             ("meow", &b.meow),
             ("solved", &b.solved),
             ("fanfare", &b.fanfare),
+            ("thunder", &b.thunder),
         ] {
             assert!(!pcm.is_empty(), "{name}");
             assert!(

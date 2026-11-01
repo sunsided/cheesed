@@ -1,6 +1,6 @@
 //! Headless screenshots of the framebuffer, for checking art without opening a window:
 //! `cargo run --example snapshot -- out_dir` writes title.png, select.png, a frame of every
-//! level, and the solved / caught panels.
+//! level, the solved / caught panels, and the music and thunder as WAV files.
 
 use std::sync::Arc;
 
@@ -10,6 +10,8 @@ use cheese::logic::{CheeseKind, Dir, Event, Status, World, levels};
 use cheese::render::anim::Anim;
 use cheese::render::fx::Fx;
 use cheese::render::{PlayView, Renderer, SelectView, Trail};
+use cheese::sound::tracker::Player;
+use cheese::sound::{SAMPLE_RATE, songs};
 
 fn main() {
     let dir = std::env::args()
@@ -33,7 +35,6 @@ fn main() {
         &a.mouse_right[1],
         &a.mouse_down[0],
         &a.mouse_up[0],
-        &a.mouse_sit,
         &a.mouse_caught,
         &a.cat_right[0],
         &a.cat_right[1],
@@ -71,6 +72,7 @@ fn main() {
         cursor: 2,
         unlocked: 4,
         order: false,
+        cheese: true,
         t: 0.0,
     };
     r.draw_select(&mut s, &sel);
@@ -147,8 +149,58 @@ fn main() {
     r.draw_play(&mut s, &play_view(&w, &fx, 6, 1.0, None));
     save(&s, "caught");
 
+    r.draw_intro(&mut s, 1, 1.0);
+    save(&s, "intro");
+    r.draw_intro(&mut s, 2, 1.0);
+    save(&s, "intro_episode_2");
+    r.draw_intro(&mut s, 3, 1.0);
+    save(&s, "intro_episode_3");
+
     r.draw_end(&mut s, 27, 33, 2.0);
     save(&s, "end");
+
+    // Audio, to listen to without starting the game.
+    let wav = |name: &str, pcm: &[f32]| {
+        let path = format!("{dir}/{name}.wav");
+        std::fs::write(&path, wav_bytes(pcm)).expect("write wav");
+        println!("{path}");
+    };
+    for (name, song) in [
+        ("music_title", songs::title()),
+        ("music_game", songs::game()),
+        ("music_extro", songs::extro()),
+    ] {
+        let secs = song.duration();
+        let mut p = Player::new(song);
+        let pcm: Vec<f32> = (0..(secs * SAMPLE_RATE as f32) as usize)
+            .map(|_| p.next_sample())
+            .collect();
+        wav(name, &pcm);
+    }
+    let bank = cheese::sound::sfx::Bank::new();
+    wav("thunder", &bank.thunder);
+}
+
+/// 16-bit mono PCM WAV.
+fn wav_bytes(pcm: &[f32]) -> Vec<u8> {
+    let data_len = (pcm.len() * 2) as u32;
+    let mut out = Vec::with_capacity(44 + data_len as usize);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_len).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&1u16.to_le_bytes()); // mono
+    out.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    out.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_len.to_le_bytes());
+    for s in pcm {
+        out.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+    }
+    out
 }
 
 fn play_view<'a>(
