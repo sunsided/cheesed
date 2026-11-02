@@ -530,9 +530,9 @@ dependencies = [
 
 [[package]]
 name = "crc32fast"
-version = "1.5.3"
+version = "1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ba106e844045ddc02c20768ac4b0b7cb45f2cc2ecbd833ac9f5dacb183c2055"
+checksum = "5f97d3416d5337d15c4b0d78c8c91df922ca143f57ec20e2d1c188333047ef04"
 dependencies = [
  "cfg-if",
 ]
@@ -620,7 +620,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -705,7 +705,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -873,7 +873,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit"
-version = "0.7.0"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7bad62b7ef2b59043639570b20ddbd4c1fa513331cb4fb20c2ae4d78b4ee8e3a"
 dependencies = [
  "anyhow",
  "game-toolkit-assets",
@@ -886,7 +888,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-assets"
-version = "0.7.0"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "787cc06d6af2d88b717fa4fa488c919176a5c52e2cd746256b989c96fc753413"
 dependencies = [
  "anyhow",
  "js-sys",
@@ -899,7 +903,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-audio"
-version = "0.7.0"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8db47298f2694bdad7961d9ddd0fd4a1e8884e2afefc143ff7ff71a072e8f8a8"
 dependencies = [
  "anyhow",
  "kira",
@@ -909,7 +915,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-core"
-version = "0.7.0"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3f55fda1e7a4639aa6112baf11ae81e68ada12b2d2c3b7b18b834ad8d82696f"
 dependencies = [
  "anyhow",
  "game-toolkit-assets",
@@ -928,7 +936,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-gfx"
-version = "0.7.0"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba0685a6cb8a75e0d083427ebc28a76f0e120ab6f39ffcda25d68a535855dcdd"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -942,7 +952,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-input"
-version = "0.7.0"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d79168500f3c431f07c3b3e1280fa1c71a1bd254c3d76a0aa4c60f29bcc04ca"
 dependencies = [
  "gilrs",
  "log",
@@ -2491,7 +2503,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3502,7 +3514,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
