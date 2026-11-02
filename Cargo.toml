@@ -1,6 +1,6 @@
 [package]
 name = "cheese"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.95"
 description = "Cheesed! A thrilling action adventure in DOS-era dress. The Mouse. The Cheese. The Destiny."
