@@ -1168,11 +1168,11 @@ impl Game for Cheese {
             }
         }
         self.start_audio_early(ctx);
-        // Hidden by the host (left the game, or the canvas was taken off the page): freeze
-        // and stay silent; a level in progress waits behind the pause screen.
-        if self.dormant || !platform::is_active() {
-            let woke = self.dormant && platform::is_active() && Self::wake_pressed(ctx);
-            if woke {
+        // Left the game (after the farewell, on the web): freeze and stay silent until a
+        // key press wakes it. The canvas being taken off the page is the toolkit's job: it
+        // suspends the audio at once and reports it in `event`.
+        if self.dormant {
+            if Self::wake_pressed(ctx) {
                 self.dormant = false;
                 self.set_host_muted(ctx, false);
                 self.goto_title();
@@ -1185,7 +1185,6 @@ impl Game for Cheese {
             // The waking press only wakes.
             return;
         }
-        self.set_host_muted(ctx, false);
         self.t += dt;
         if ctx.input.key_pressed(Key::KeyM) {
             self.muted = !self.muted;
@@ -1234,12 +1233,15 @@ impl Game for Cheese {
     }
 
     /// Window events: refit the viewport on resize, and pause a level when the window
-    /// loses focus so the player does not come back to a squeaking mouse and wonder what
-    /// happened. Regaining focus does not unpause; the player does that.
+    /// loses focus or the host takes the canvas off the page, so the player does not come
+    /// back to a squeaking mouse and wonder what happened. Regaining focus does not unpause; the player does that.
     fn event(&mut self, _ctx: &mut Context, e: &GameEvent) {
         match *e {
             GameEvent::Resized { width, height } => self.viewport = Viewport::fit(width, height),
             GameEvent::FocusChanged(false) if self.mode == Mode::Play => self.paused = true,
+            // The canvas was off the page (the toolkit kept it silent meanwhile); both
+            // changes arrive on the first frame back, so pause on the way out.
+            GameEvent::CanvasAttached(false) if self.mode == Mode::Play => self.paused = true,
             _ => {}
         }
     }

@@ -48,3 +48,12 @@ codegen-units = 1
 # The solver test walks millions of states; unoptimized it takes minutes.
 [profile.test]
 opt-level = 2
+
+# Trial of sunsided/game-toolkit#83 (suspend web audio while the canvas is detached).
+[patch.crates-io]
+game-toolkit = { git = "https://github.com/sunsided/game-toolkit", rev = "8a2b16c" }
+game-toolkit-assets = { git = "https://github.com/sunsided/game-toolkit", rev = "8a2b16c" }
+game-toolkit-audio = { git = "https://github.com/sunsided/game-toolkit", rev = "8a2b16c" }
+game-toolkit-core = { git = "https://github.com/sunsided/game-toolkit", rev = "8a2b16c" }
+game-toolkit-gfx = { git = "https://github.com/sunsided/game-toolkit", rev = "8a2b16c" }
+game-toolkit-input = { git = "https://github.com/sunsided/game-toolkit", rev = "8a2b16c" }

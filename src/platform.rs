@@ -179,12 +179,6 @@ pub fn commands() -> Vec<HostCommand> {
     imp::commands()
 }
 
-/// Whether the game is on screen. On the web it is not while its canvas is detached from
-/// the page (the host component unmounted); the game then pauses and goes silent.
-pub fn is_active() -> bool {
-    imp::is_active()
-}
-
 /// On the web, if the page already had a user gesture, open a throwaway `AudioContext` to
 /// find out whether audio may start without another one (see [`audio_allowed`]).
 pub fn probe_audio() {
@@ -218,11 +212,6 @@ mod imp {
     /// Natively no host sends commands.
     pub fn commands() -> Vec<super::HostCommand> {
         Vec::new()
-    }
-
-    /// Natively the game always has the window to itself.
-    pub fn is_active() -> bool {
-        true
     }
 
     /// Natively the audio device opens at startup; there is nothing to probe.
@@ -270,7 +259,7 @@ mod imp {
 
 /// Browser storage (one `localStorage` entry), options from the page URL's query string, and
 /// the host-page integration: events on the canvas and `postMessage` to a parent frame, a
-/// restart request, pausing while the canvas is detached, and an audio-unlock probe.
+/// restart request and an audio-unlock probe.
 #[cfg(target_arch = "wasm32")]
 mod imp {
     /// The `localStorage` key holding the serialized progress.
@@ -317,11 +306,6 @@ mod imp {
         web_sys::window()?
             .document()?
             .get_element_by_id(crate::app::CANVAS_ID)
-    }
-
-    /// Paused while the canvas is detached from the page (the host component unmounted).
-    pub fn is_active() -> bool {
-        canvas().is_none_or(|c| c.is_connected())
     }
 
     /// Dispatch the event on the canvas (bubbling, fields in `detail`) and, inside an
