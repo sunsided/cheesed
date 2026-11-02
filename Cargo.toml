@@ -9,7 +9,7 @@ authors = ["Markus Mayer"]
 publish = false
 
 [dependencies]
-game-toolkit = { version = "0.9", features = ["synth"] }
+game-toolkit = { version = "0.10", features = ["synth"] }
 log = "0.4"
 
 # Native builds log via env_logger; on the web the toolkit logs to the browser console.
@@ -45,13 +45,3 @@ codegen-units = 1
 # The solver test walks millions of states; unoptimized it takes minutes.
 [profile.test]
 opt-level = 2
-
-# Track game-toolkit main until the release after 0.9.0: #83 (suspend web audio while the
-# canvas is detached), #84 / #86 (autoplay probe, `Context::start_audio_if_allowed`).
-[patch.crates-io]
-game-toolkit = { git = "https://github.com/sunsided/game-toolkit", branch = "main" }
-game-toolkit-assets = { git = "https://github.com/sunsided/game-toolkit", branch = "main" }
-game-toolkit-audio = { git = "https://github.com/sunsided/game-toolkit", branch = "main" }
-game-toolkit-core = { git = "https://github.com/sunsided/game-toolkit", branch = "main" }
-game-toolkit-gfx = { git = "https://github.com/sunsided/game-toolkit", branch = "main" }
-game-toolkit-input = { git = "https://github.com/sunsided/game-toolkit", branch = "main" }
