@@ -874,7 +874,7 @@ dependencies = [
 [[package]]
 name = "game-toolkit"
 version = "0.9.0"
-source = "git+https://github.com/sunsided/game-toolkit?rev=8a2b16c#8a2b16cf40f166d58779fa7fcc6246707b057af8"
+source = "git+https://github.com/sunsided/game-toolkit?rev=9ea9f18#9ea9f18df059fa67e79ae81b27758850ff121359"
 dependencies = [
  "anyhow",
  "game-toolkit-assets",
@@ -888,7 +888,7 @@ dependencies = [
 [[package]]
 name = "game-toolkit-assets"
 version = "0.9.0"
-source = "git+https://github.com/sunsided/game-toolkit?rev=8a2b16c#8a2b16cf40f166d58779fa7fcc6246707b057af8"
+source = "git+https://github.com/sunsided/game-toolkit?rev=9ea9f18#9ea9f18df059fa67e79ae81b27758850ff121359"
 dependencies = [
  "anyhow",
  "js-sys",
@@ -902,7 +902,7 @@ dependencies = [
 [[package]]
 name = "game-toolkit-audio"
 version = "0.9.0"
-source = "git+https://github.com/sunsided/game-toolkit?rev=8a2b16c#8a2b16cf40f166d58779fa7fcc6246707b057af8"
+source = "git+https://github.com/sunsided/game-toolkit?rev=9ea9f18#9ea9f18df059fa67e79ae81b27758850ff121359"
 dependencies = [
  "anyhow",
  "kira",
@@ -913,13 +913,14 @@ dependencies = [
 [[package]]
 name = "game-toolkit-core"
 version = "0.9.0"
-source = "git+https://github.com/sunsided/game-toolkit?rev=8a2b16c#8a2b16cf40f166d58779fa7fcc6246707b057af8"
+source = "git+https://github.com/sunsided/game-toolkit?rev=9ea9f18#9ea9f18df059fa67e79ae81b27758850ff121359"
 dependencies = [
  "anyhow",
  "game-toolkit-assets",
  "game-toolkit-audio",
  "game-toolkit-gfx",
  "game-toolkit-input",
+ "js-sys",
  "log",
  "pollster",
  "wasm-bindgen",
@@ -933,7 +934,7 @@ dependencies = [
 [[package]]
 name = "game-toolkit-gfx"
 version = "0.9.0"
-source = "git+https://github.com/sunsided/game-toolkit?rev=8a2b16c#8a2b16cf40f166d58779fa7fcc6246707b057af8"
+source = "git+https://github.com/sunsided/game-toolkit?rev=9ea9f18#9ea9f18df059fa67e79ae81b27758850ff121359"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -948,7 +949,7 @@ dependencies = [
 [[package]]
 name = "game-toolkit-input"
 version = "0.9.0"
-source = "git+https://github.com/sunsided/game-toolkit?rev=8a2b16c#8a2b16cf40f166d58779fa7fcc6246707b057af8"
+source = "git+https://github.com/sunsided/game-toolkit?rev=9ea9f18#9ea9f18df059fa67e79ae81b27758850ff121359"
 dependencies = [
  "gilrs",
  "log",

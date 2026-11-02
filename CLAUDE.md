@@ -377,7 +377,9 @@ See README.md for the rules. Sister project of `../cookie-doh` (same architectur
   page. On the web, exit (after the farewell) sets `dormant` instead of quitting; the game is
   also paused while the canvas is detached (`GameEvent::CanvasAttached`; the toolkit suspends
   the audio itself, as no frames run meanwhile), and starts audio
-  early when the page already had a gesture (`probe_audio` / `audio_allowed`).
+  early when the page already had a gesture (the toolkit does it before `init`, but only sees
+  Chromium's at-once `running`; `probe_audio` / `audio_allowed` cover Firefox and WebKit, whose
+  fresh contexts report `suspended` for a moment).
   `embed/Cheesed.svelte` is the SvelteKit wrapper, `task web:export DEST=...` the export.
 - CI: `.github/workflows/ci.yml` (fmt, clippy native + wasm, tests on push/PR);
   `release.yml` on a `v*` tag builds the Linux binary and the web build, attests them,

@@ -1098,9 +1098,14 @@ impl Game for Cheese {
         let (ww, wh) = ctx.gfx.size();
         let levels = levels();
         let options = Options::load();
-        // On the web, find out early whether the page's earlier gestures already unlock
-        // audio, so the title's thunder and music need not wait for a key press.
-        platform::probe_audio();
+        // On the web, the toolkit already started audio if the page had a gesture and the
+        // context came up `running` at once (Chromium). Firefox and WebKit report a fresh
+        // context `suspended` for a moment even when audio is allowed, which the toolkit's
+        // check misses: probe again and give it time, so the title's thunder and music need
+        // not wait for a key press there either.
+        if !ctx.audio.as_ref().is_some_and(|a| a.is_started()) {
+            platform::probe_audio();
+        }
         Ok(Self {
             screen: Screen::new(),
             rgba,
