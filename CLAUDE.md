@@ -375,7 +375,10 @@ See README.md for the rules. Sister project of `../cookie-doh` (same architectur
 - Host integration (`platform::notify` / `HostEvent`, `HostCommand`): `cheese:start|exit|
   complete` DOM events on the canvas (+ `postMessage` in iframes), `cheese:restart` from the
   page. On the web, exit (after the farewell) sets `dormant` instead of quitting; the game is
-  also paused/muted while the canvas is detached (`platform::is_active`), and starts audio
+  also paused/muted while the canvas is detached (`platform::is_active`; detached canvases get no
+  frames, so `platform::silence_when_detached` suspends the `AudioContext` from a
+  `MutationObserver`, found by hooking `AudioNode.prototype.connect` - wasm-bindgen caches the
+  `AudioContext` constructor at module load, so wrapping it from `main` misses), and starts audio
   early when the page already had a gesture (`probe_audio` / `audio_allowed`).
   `embed/Cheesed.svelte` is the SvelteKit wrapper, `task web:export DEST=...` the export.
 - CI: `.github/workflows/ci.yml` (fmt, clippy native + wasm, tests on push/PR);

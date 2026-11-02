@@ -239,6 +239,8 @@ tasks:
     cmds:
       - mkdir -p "{{.DEST}}"
       - cp {{.WEB_RELEASE}}/cheese.js {{.WEB_RELEASE}}/cheese_bg.wasm {{.WEB_RELEASE}}/THIRD_PARTY_LICENSES.html "{{.DEST}}/"
+      # wasm-bindgen inline_js snippets, imported by cheese.js.
+      - rm -rf "{{.DEST}}/snippets" && cp -r {{.WEB_RELEASE}}/snippets "{{.DEST}}/"
       - echo "Exported to {{.DEST}} - embed with embed/Cheesed.svelte (base = its URL path)"
 
   # ---- Release ---------------------------------------------------------------------------

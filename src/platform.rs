@@ -185,6 +185,16 @@ pub fn is_active() -> bool {
     imp::is_active()
 }
 
+/// On the web, silence the page's audio the moment the canvas is taken off the page, and
+/// bring it back when the canvas returns. Call once from `main`, before `run`, so every
+/// `AudioContext` the game opens is seen.
+///
+/// [`is_active`] alone is not enough: it is read in `update`, and a detached canvas gets no
+/// more frames, so the game would never notice. This works from a DOM observer instead.
+pub fn silence_when_detached() {
+    imp::silence_when_detached();
+}
+
 /// On the web, if the page already had a user gesture, open a throwaway `AudioContext` to
 /// find out whether audio may start without another one (see [`audio_allowed`]).
 pub fn probe_audio() {
@@ -224,6 +234,9 @@ mod imp {
     pub fn is_active() -> bool {
         true
     }
+
+    /// Natively there is no canvas to lose.
+    pub fn silence_when_detached() {}
 
     /// Natively the audio device opens at startup; there is nothing to probe.
     pub fn probe_audio() {}
@@ -312,16 +325,72 @@ mod imp {
 
     use wasm_bindgen::JsValue;
 
-    /// The game's canvas, looked up by its id.
+    thread_local! {
+        /// The game's canvas, kept once found: `getElementById` no longer finds it after
+        /// the host takes it off the page, which is exactly when it matters.
+        static CANVAS: std::cell::RefCell<Option<web_sys::Element>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    /// The game's canvas, looked up by its id on first use.
     fn canvas() -> Option<web_sys::Element> {
-        web_sys::window()?
-            .document()?
-            .get_element_by_id(crate::app::CANVAS_ID)
+        CANVAS.with_borrow_mut(|c| {
+            if c.is_none() {
+                *c = web_sys::window()?
+                    .document()?
+                    .get_element_by_id(crate::app::CANVAS_ID);
+            }
+            c.clone()
+        })
     }
 
     /// Paused while the canvas is detached from the page (the host component unmounted).
     pub fn is_active() -> bool {
         canvas().is_none_or(|c| c.is_connected())
+    }
+
+    #[wasm_bindgen::prelude::wasm_bindgen(inline_js = r#"
+export function silence_when_detached(canvas) {
+    // Every context that routes sound anywhere, seen as its nodes connect. The audio
+    // backend opens its own context out of reach, but shares AudioNode.prototype.
+    const contexts = new Set();
+    const connect = AudioNode.prototype.connect;
+    AudioNode.prototype.connect = function (...args) {
+        contexts.add(this.context);
+        return connect.apply(this, args);
+    };
+    // Contexts suspended here, to resume when the canvas comes back.
+    const ours = new Set();
+    let attached = canvas.isConnected;
+    new MutationObserver(() => {
+        if (canvas.isConnected === attached) return;
+        attached = canvas.isConnected;
+        for (const c of contexts) {
+            if (c.state === "closed") {
+                contexts.delete(c);
+                ours.delete(c);
+            } else if (!attached && c.state === "running") {
+                ours.add(c);
+                c.suspend();
+            } else if (attached && ours.delete(c)) {
+                c.resume();
+            }
+        }
+    }).observe(document, { childList: true, subtree: true });
+}
+"#)]
+    extern "C" {
+        #[wasm_bindgen::prelude::wasm_bindgen(js_name = silence_when_detached)]
+        fn watch(canvas: &web_sys::Element);
+    }
+
+    /// Suspend the page's audio from a DOM observer the moment the canvas leaves the page,
+    /// and resume what it suspended when the canvas is back. No frame needed.
+    pub fn silence_when_detached() {
+        match canvas() {
+            Some(c) => watch(&c),
+            None => log::warn!("no canvas; audio may outlive it"),
+        }
     }
 
     /// Dispatch the event on the canvas (bubbling, fields in `detail`) and, inside an

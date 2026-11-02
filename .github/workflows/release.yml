@@ -96,6 +96,7 @@ jobs:
           subject-path: |
             dist/cheese_bg.wasm
             dist/cheese.js
+            dist/snippets/**/*.js
 
       - name: Package
         run: |
