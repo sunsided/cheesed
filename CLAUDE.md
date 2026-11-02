@@ -343,8 +343,8 @@ See README.md for the rules. Sister project of `../cookie-doh` (same architectur
 - `src/sound/`: all audio synthesized, no asset files. Music: synthie songs (game-toolkit's
   `synth` feature, tracker notation) in `songs.rs`: `title()` (chiptune metal, title + menu),
   `game()` (a dainty music-box minuet - the deliberate letdown) and `extro()` (the title riff
-  turned triumphant, E major, on the episode ending). Power chords are three lanes per
-  channel via `transpose()` until synthie has chord cells (sunsided/synth#64). Played with
+  turned triumphant, E major, on the episode ending). Power chords are interval-chord
+  cells (`E2^07c!`, root + fifth + octave) via `power_chords()`. Played with
   `play_synth_sound` and voice normalization off (synthie's default divides each channel by
   its four voices). Effects stay hand-rolled (`synth.rs` oscillators, `sfx.rs`).
   SFX are pre-rendered PCM in `sfx::Bank`; the title's thunder is cued by

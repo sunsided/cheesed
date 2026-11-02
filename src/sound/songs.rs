@@ -7,14 +7,13 @@
 //!
 //! Notation (synthie's `pattern` module): one cell per row, `C4` / `F#3` / `Bb2` a note, `.`
 //! hold, `-` release, `k s h c` kick, snare, hat, crash, `|` a bar line for readability, and
-//! `@n` on a lane's first note to select the song's patch `n`. Each lane is monophonic, so the
-//! power chords are three lanes on one channel: the riff, a fifth up and an octave up.
+//! `@n` on a lane's first note to select the song's patch `n`, and `E2^07c!` an interval chord
+//! (root, fifth and octave held together: a power chord).
 
 use game_toolkit::prelude::synth::{ChannelNo, Song, SynthParams, Tempo};
 use game_toolkit::prelude::synthie::params::{
     EnvParams, FilterParams, GlobalParams, LfoShape, LfoTarget, OscParams, Waveform,
 };
-use game_toolkit::prelude::synthie::pattern::parse_note;
 
 /// One synthie unit of pitch modulation is a tenth of an octave (`freq * 2^(pitch / 10)`),
 /// i.e. 1.2 semitones; vibrato depths below are given in semitones and converted with this.
@@ -31,28 +30,28 @@ fn patch(
     sustain: f32,
     release: f32,
 ) -> SynthParams {
-    // synthie's sub-parameter structs have no `Default` of their own; each takes the rest of
-    // its fields from the full default patch (a low-pass filter, no LFO depth, ...).
-    let d = SynthParams::default();
     SynthParams {
         osc: OscParams {
             waveform: wave,
-            ..d.osc
+            ..OscParams::default()
         },
         env: EnvParams {
             attack,
             decay,
             sustain,
             release,
-            ..d.env
+            ..EnvParams::default()
         },
         filter: FilterParams {
             cutoff: 12_000.0,
             resonance: 0.0,
-            ..d.filter
+            ..FilterParams::default()
         },
-        global: GlobalParams { volume, ..d.global },
-        ..d
+        global: GlobalParams {
+            volume,
+            ..GlobalParams::default()
+        },
+        ..SynthParams::default()
     }
 }
 
@@ -119,48 +118,29 @@ fn music_box_low() -> SynthParams {
     patch(Waveform::Triangle, 0.22, 0.004, 0.14, 0.6, 0.06)
 }
 
-/// `pattern` with every note moved by `semitones` (holds, releases and bar lines kept), for
-/// the upper voices of the power chords. A lane-selecting `@n` is dropped: the root lane on
-/// the same channel already selects the patch.
-fn transpose(pattern: &str, semitones: i8) -> String {
-    const NAMES: [&str; 12] = [
-        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
-    ];
-    pattern
-        .split_whitespace()
-        .map(|cell| {
-            let note = cell.split('@').next().unwrap_or(cell);
-            match parse_note(note) {
-                Ok(n) => {
-                    let m = (i16::from(n.0) + i16::from(semitones)).clamp(0, 127) as usize;
-                    format!("{}{}", NAMES[m % 12], m as i32 / 12 - 1)
-                }
-                Err(_) => cell.to_string(),
-            }
+/// The guitar riff `riff` as power chords: every note becomes an interval chord of root,
+/// fifth and octave (`E2` -> `E2^07c!`); holds, releases, bar lines and `@n` stay put.
+fn power_chords(riff: &str) -> String {
+    riff.split_whitespace()
+        .map(|cell| match cell.split_once('@') {
+            _ if !cell.starts_with(|c: char| c.is_ascii_uppercase()) => cell.to_string(),
+            Some((note, patch)) => format!("{note}^07c!@{patch}"),
+            None => format!("{cell}^07c!"),
         })
         .collect::<Vec<_>>()
         .join(" ")
 }
 
-/// Add the guitar part on `channel` as a power chord: the riff, a fifth up and an octave up.
-fn power_chords(song: Song, channel: u8, riff: &str) -> Song {
-    let ch = ChannelNo(channel);
-    song.lane(ch, riff)
-        .and_then(|s| s.lane(ch, &transpose(riff, 7)))
-        .and_then(|s| s.lane(ch, &transpose(riff, 12)))
-        .expect("guitar lanes parse")
-}
-
 /// Title: heroic chiptune metal in E minor, eighth-note rows at 152 bpm.
 pub fn title() -> Song {
-    let song = Song::new(Tempo::bpm(152.0, 2))
+    Song::new(Tempo::bpm(152.0, 2))
         .patch(guitar())
         .patch(shred())
-        .patch(rock_bass());
-    power_chords(
-        song,
-        0,
-        "E2@0 E2 E2 E2 E2 E2 G2 A2 | E2 E2 E2 E2 E2 E2 D2 C2 |
+        .patch(rock_bass())
+        .lane(
+            ChannelNo(0),
+            &power_chords(
+                "E2@0 E2 E2 E2 E2 E2 G2 A2 | E2 E2 E2 E2 E2 E2 D2 C2 |
                  E2 E2 E2 E2 E2 E2 G2 A2 | Bb2 . A2 . G2 . D2 . |
                  C2 . C2 C2 C2 . C2 C2 | D2 . D2 D2 D2 . D2 D2 |
                  E2 E2 E2 E2 E2 E2 E2 E2 | C2 . D2 . E2 . - . |
@@ -168,10 +148,12 @@ pub fn title() -> Song {
                  E2 E2 E2 E2 E2 E2 G2 A2 | Bb2 . A2 . G2 . D2 . |
                  C2 . C2 C2 C2 . C2 C2 | D2 . D2 D2 D2 . D2 D2 |
                  B1 . B1 B1 B1 . B1 B1 | E2 . . . . . - . |",
-    )
-    .lane(
-        ChannelNo(1),
-        "@1 . . . . . . . | - . . . . . . . |
+            ),
+        )
+        .and_then(|s| {
+            s.lane(
+                ChannelNo(1),
+                "@1 . . . . . . . | - . . . . . . . |
                  - . . . . . . . | B4 . . . . . . . |
                  G4 . E4 . G4 . A4 . | B4 . . . A4 . G4 . |
                  A4 . . . G4 . F#4 . | E4 . . . . . - . |
@@ -179,11 +161,12 @@ pub fn title() -> Song {
                  E5 . . . D5 . B4 . | A4 . B4 . D5 . . . |
                  E5 . G5 . E5 . D5 . | F#5 . . . E5 . D5 . |
                  D#5 . . . F#5 . . . | E5 . . . . . - . |",
-    )
-    .and_then(|s| {
-        s.lane(
-            ChannelNo(2),
-            "E1@2 E1 E1 E1 E1 E1 G1 A1 | E1 E1 E1 E1 E1 E1 D1 C1 |
+            )
+        })
+        .and_then(|s| {
+            s.lane(
+                ChannelNo(2),
+                "E1@2 E1 E1 E1 E1 E1 G1 A1 | E1 E1 E1 E1 E1 E1 D1 C1 |
                  E1 E1 E1 E1 E1 E1 G1 A1 | Bb1 . A1 . G1 . D1 . |
                  C1 C2 C1 C2 C1 C2 C1 C2 | D1 D2 D1 D2 D1 D2 D1 D2 |
                  E1 E2 E1 E2 E1 E2 E1 E2 | C1 . D1 . E1 . - . |
@@ -191,41 +174,41 @@ pub fn title() -> Song {
                  E1 E1 E1 E1 E1 E1 G1 A1 | Bb1 . A1 . G1 . D1 . |
                  C1 C2 C1 C2 C1 C2 C1 C2 | D1 D2 D1 D2 D1 D2 D1 D2 |
                  B0 B1 B0 B1 B0 B1 B0 B1 | E1 . . . . . - . |",
-        )
-    })
-    .and_then(|s| {
-        s.lane(
-            ChannelNo(0),
-            "k h s h k k s h | k h s h k k s h | k h s h k k s h | s s k s s k s s |
+            )
+        })
+        .and_then(|s| {
+            s.lane(
+                ChannelNo(0),
+                "k h s h k k s h | k h s h k k s h | k h s h k k s h | s s k s s k s s |
                  k h s h k k s h | k h s h k k s h | k h s h k k s h | k . s . k s s s |
                  k h s h k k s h | k h s h k k s h | k h s h k k s h | s s k s s k s s |
                  k h s h k k s h | k h s h k k s h | k h s h k k s h | k . s . k . k . |",
-        )
-    })
-    .and_then(|s| {
-        s.lane(
-            ChannelNo(0),
-            "c . . . . . . . | - . . . . . . . | - . . . . . . . | - . . . c . . . |
+            )
+        })
+        .and_then(|s| {
+            s.lane(
+                ChannelNo(0),
+                "c . . . . . . . | - . . . . . . . | - . . . . . . . | - . . . c . . . |
                  c . . . . . . . | - . . . . . . . | c . . . . . . . | - . . . c . . . |
                  c . . . . . . . | - . . . . . . . | - . . . . . . . | - . . . c . . . |
                  c . . . . . . . | c . . . . . . . | c . . . . . . . | c . . . . . . . |",
-        )
-    })
-    .expect("title parses")
+            )
+        })
+        .expect("title parses")
 }
 
 /// Episode ending: the title's riff turned triumphant. E major, eighth-note rows at 120 bpm,
 /// the title melody quoted in major, then a bVI-bVII-I climb (C-D-E) with a doubled lead.
 pub fn extro() -> Song {
-    let song = Song::new(Tempo::bpm(120.0, 2))
+    Song::new(Tempo::bpm(120.0, 2))
         .patch(ring())
         .patch(shred())
         .patch(double())
-        .patch(rock_bass());
-    power_chords(
-        song,
-        0,
-        "E2@0 . . . E2 . E2 E2 | C#2 . . . C#2 . C#2 C#2 |
+        .patch(rock_bass())
+        .lane(
+            ChannelNo(0),
+            &power_chords(
+                "E2@0 . . . E2 . E2 E2 | C#2 . . . C#2 . C#2 C#2 |
                  A1 . . . A1 . A1 A1 | B1 . . . B1 B1 B1 B1 |
                  E2 . . . E2 . E2 E2 | G#1 . . . G#1 . G#1 G#1 |
                  A1 . . . A1 . A1 A1 | B1 . B1 B1 B1 B1 B1 B1 |
@@ -233,10 +216,12 @@ pub fn extro() -> Song {
                  E2 . . . E2 . E2 E2 | E2 . . . . . - . |
                  C2 . . . C2 . C2 C2 | D2 . . . D2 . D2 D2 |
                  E2 . . . E2 . E2 E2 | E2 . . . . . - . |",
-    )
-    .lane(
-        ChannelNo(1),
-        "E4@1 . . . G#4 . B4 . | C#5 . . . B4 . G#4 . |
+            ),
+        )
+        .and_then(|s| {
+            s.lane(
+                ChannelNo(1),
+                "E4@1 . . . G#4 . B4 . | C#5 . . . B4 . G#4 . |
                  A4 . B4 . C#5 . E5 . | F#5 . . . . . D#5 . |
                  E5 . . . B4 . G#4 . | B4 . . . D#5 . B4 . |
                  C#5 . B4 . A4 . C#5 . | B4 . . . . . - . |
@@ -244,22 +229,23 @@ pub fn extro() -> Song {
                  G#5 . . . . . . . | B5 . . . . . - . |
                  G5 . E5 . C5 . E5 . | F#5 . A5 . D6 . A5 . |
                  B5 . . . G#5 . . . | E6 . . . . . - . |",
-    )
-    .and_then(|s| {
-        s.lane(
-            ChannelNo(2),
-            "@2 . . . . . . . | - . . . . . . . | - . . . . . . . | - . . . . . . . |
+            )
+        })
+        .and_then(|s| {
+            s.lane(
+                ChannelNo(2),
+                "@2 . . . . . . . | - . . . . . . . | - . . . . . . . | - . . . . . . . |
                  - . . . . . . . | - . . . . . . . | - . . . . . . . | - . . . . . . . |
                  C4 . . . E4 . G4 . | F#4 . . . A4 . F#4 . |
                  G#4 . . . . . . . | B4 . . . . . - . |
                  G4 . E4 . C4 . E4 . | F#4 . A4 . D5 . A4 . |
                  B4 . . . G#4 . . . | E5 . . . . . - . |",
-        )
-    })
-    .and_then(|s| {
-        s.lane(
-            ChannelNo(3),
-            "E1@3 E1 E1 E1 E1 E1 E1 E1 | C#1 C#1 C#1 C#1 C#1 C#1 C#1 C#1 |
+            )
+        })
+        .and_then(|s| {
+            s.lane(
+                ChannelNo(3),
+                "E1@3 E1 E1 E1 E1 E1 E1 E1 | C#1 C#1 C#1 C#1 C#1 C#1 C#1 C#1 |
                  A0 A0 A0 A0 A0 A0 A0 A0 | B0 B0 B0 B0 B0 B0 B0 B0 |
                  E1 E1 E1 E1 E1 E1 E1 E1 | G#0 G#0 G#0 G#0 G#0 G#0 G#0 G#0 |
                  A0 A0 A0 A0 A0 A0 A0 A0 | B0 B0 B0 B0 B0 B0 B0 B0 |
@@ -267,27 +253,27 @@ pub fn extro() -> Song {
                  E1 E1 E1 E1 E1 E1 E1 E1 | E1 . . . . . - . |
                  C1 C1 C1 C1 C1 C1 C1 C1 | D1 D1 D1 D1 D1 D1 D1 D1 |
                  E1 E1 E1 E1 E1 E1 E1 E1 | E1 . . . . . - . |",
-        )
-    })
-    .and_then(|s| {
-        s.lane(
-            ChannelNo(0),
-            "k . h . s . h . | k . h k s . h . | k . h . s . h . | k . h k s . s s |
+            )
+        })
+        .and_then(|s| {
+            s.lane(
+                ChannelNo(0),
+                "k . h . s . h . | k . h k s . h . | k . h . s . h . | k . h k s . s s |
                  k . h . s . h . | k . h k s . h . | k . h . s . h . | s s s s k k s s |
                  k . h . s . h . | k . h k s . h . | k . h . s . h . | s s k s s k s s |
                  k . h . s . h . | k . h k s . h . | k . h . s . h . | k . s . k . k . |",
-        )
-    })
-    .and_then(|s| {
-        s.lane(
-            ChannelNo(0),
-            "c . . . . . . . | - . . . . . . . | - . . . . . . . | - . . . . . . . |
+            )
+        })
+        .and_then(|s| {
+            s.lane(
+                ChannelNo(0),
+                "c . . . . . . . | - . . . . . . . | - . . . . . . . | - . . . . . . . |
                  c . . . . . . . | - . . . . . . . | - . . . . . . . | - . . . c . . . |
                  c . . . . . . . | c . . . . . . . | c . . . . . . . | - . . . c . . . |
                  c . . . . . . . | c . . . . . . . | c . . . . . . . | c . . . . . . . |",
-        )
-    })
-    .expect("extro parses")
+            )
+        })
+        .expect("extro parses")
 }
 
 /// In-game: a dainty minuet in F, three quarter-note rows per bar. No drums. Not one.
@@ -328,9 +314,8 @@ mod tests {
     }
 
     #[test]
-    fn transpose_moves_notes_only() {
-        assert_eq!(transpose("E2@0 . - | Bb1", 7), "B2 . - | F2");
-        assert_eq!(transpose("E2 E2", 12), "E3 E3");
+    fn power_chords_chord_notes_only() {
+        assert_eq!(power_chords("E2@0 . - | Bb1"), "E2^07c!@0 . - | Bb1^07c!");
     }
 
     #[test]
