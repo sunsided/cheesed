@@ -207,7 +207,8 @@ fn main() {
             .collect();
         wav(name, &pcm);
     }
-    // The same songs on synthie (feature branch), for comparing by ear.
+    // The songs as the game plays them, on synthie (converted from the tracker songs
+    // rendered above), for comparing the two by ear.
     for (name, song) in [
         ("music_title_synthie", songs::title()),
         ("music_game_synthie", songs::game()),
