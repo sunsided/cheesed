@@ -31,9 +31,6 @@ web-sys = { version = "0.3", features = [
     "CustomEvent",
     "CustomEventInit",
     "MessageEvent",
-    "Navigator",
-    "AudioContext",
-    "AudioContextState",
 ] }
 
 # Optimize dependencies even in dev builds; our own code still compiles fast.
@@ -49,12 +46,13 @@ codegen-units = 1
 [profile.test]
 opt-level = 2
 
-# game-toolkit main ahead of a release: #83 (suspend web audio while the canvas is detached)
-# and #84 (start web audio at startup after an earlier gesture).
+# game-toolkit ahead of a release: #83 (suspend web audio while the canvas is detached),
+# #84 (start web audio at startup after an earlier gesture) and PR #86 (wait for Firefox and
+# WebKit to report the autoplay probe `running`; `Context::start_audio_if_allowed`).
 [patch.crates-io]
-game-toolkit = { git = "https://github.com/sunsided/game-toolkit", rev = "9ea9f18" }
-game-toolkit-assets = { git = "https://github.com/sunsided/game-toolkit", rev = "9ea9f18" }
-game-toolkit-audio = { git = "https://github.com/sunsided/game-toolkit", rev = "9ea9f18" }
-game-toolkit-core = { git = "https://github.com/sunsided/game-toolkit", rev = "9ea9f18" }
-game-toolkit-gfx = { git = "https://github.com/sunsided/game-toolkit", rev = "9ea9f18" }
-game-toolkit-input = { git = "https://github.com/sunsided/game-toolkit", rev = "9ea9f18" }
+game-toolkit = { git = "https://github.com/sunsided/game-toolkit", rev = "4f3e801" }
+game-toolkit-assets = { git = "https://github.com/sunsided/game-toolkit", rev = "4f3e801" }
+game-toolkit-audio = { git = "https://github.com/sunsided/game-toolkit", rev = "4f3e801" }
+game-toolkit-core = { git = "https://github.com/sunsided/game-toolkit", rev = "4f3e801" }
+game-toolkit-gfx = { git = "https://github.com/sunsided/game-toolkit", rev = "4f3e801" }
+game-toolkit-input = { git = "https://github.com/sunsided/game-toolkit", rev = "4f3e801" }

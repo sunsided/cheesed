@@ -1042,22 +1042,7 @@ impl Cheese {
         self.toast = None;
         self.held = None;
         self.fx = Fx::new();
-        // The page may have had a gesture since launch (the player clicked a button).
-        platform::probe_audio();
         self.goto_title();
-    }
-
-    /// On the web, start audio without waiting for a key in the game when the page
-    /// already had a gesture and the browser lets it play (see [`platform::audio_allowed`]).
-    /// Otherwise the toolkit starts it on the first key press as usual.
-    fn start_audio_early(&mut self, ctx: &mut Context) {
-        if let Some(a) = &mut ctx.audio
-            && !a.is_started()
-            && platform::audio_allowed()
-            && let Err(e) = a.start()
-        {
-            log::warn!("early audio start: {e}");
-        }
     }
 
     /// A deliberate "I'm back" from a dormant player: a key the game uses, a click, a tap
@@ -1098,14 +1083,6 @@ impl Game for Cheese {
         let (ww, wh) = ctx.gfx.size();
         let levels = levels();
         let options = Options::load();
-        // On the web, the toolkit already started audio if the page had a gesture and the
-        // context came up `running` at once (Chromium). Firefox and WebKit report a fresh
-        // context `suspended` for a moment even when audio is allowed, which the toolkit's
-        // check misses: probe again and give it time, so the title's thunder and music need
-        // not wait for a key press there either.
-        if !ctx.audio.as_ref().is_some_and(|a| a.is_started()) {
-            platform::probe_audio();
-        }
         Ok(Self {
             screen: Screen::new(),
             rgba,
@@ -1169,10 +1146,13 @@ impl Game for Cheese {
     fn update(&mut self, ctx: &mut Context, dt: f32) {
         for cmd in platform::commands() {
             match cmd {
-                HostCommand::Restart => self.restart(),
+                HostCommand::Restart => {
+                    self.restart();
+                    // The player clicked on the page to restart, so audio may start now.
+                    ctx.start_audio_if_allowed();
+                }
             }
         }
-        self.start_audio_early(ctx);
         // Left the game (after the farewell, on the web): freeze and stay silent until a
         // key press wakes it. The canvas being taken off the page is the toolkit's job: it
         // suspends the audio at once and reports it in `event`.
