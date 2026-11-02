@@ -56,7 +56,14 @@ fn patch(
 }
 
 /// `p` with a sine vibrato of `semitones` depth at `rate` Hz on the pitch LFO.
+///
+/// synthie's LFO depth runs 0..1, so the deepest vibrato is 1.2 semitones; deeper asks are a
+/// mistake in the patch, caught by the assertion rather than silently flattened.
 fn vibrato(mut p: SynthParams, semitones: f32, rate: f32) -> SynthParams {
+    debug_assert!(
+        (0.0..=SEMITONES_PER_PITCH_UNIT).contains(&semitones),
+        "vibrato depth {semitones} is outside synthie's 0..1.2 semitones"
+    );
     p.lfo.lfo_target = LfoTarget::Pitch;
     p.lfo.lfo_shape = LfoShape::Sine;
     p.lfo.lfo_rate = rate;
