@@ -9,7 +9,7 @@ authors = ["Markus Mayer"]
 publish = false
 
 [dependencies]
-game-toolkit = { version = "0.9", features = ["synth"] }
+game-toolkit = { version = "0.10", features = ["synth"] }
 log = "0.4"
 
 # Native builds log via env_logger; on the web the toolkit logs to the browser console.
@@ -31,9 +31,6 @@ web-sys = { version = "0.3", features = [
     "CustomEvent",
     "CustomEventInit",
     "MessageEvent",
-    "Navigator",
-    "AudioContext",
-    "AudioContextState",
 ] }
 
 # Optimize dependencies even in dev builds; our own code still compiles fast.

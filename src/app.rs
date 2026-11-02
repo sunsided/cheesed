@@ -1042,22 +1042,7 @@ impl Cheese {
         self.toast = None;
         self.held = None;
         self.fx = Fx::new();
-        // The page may have had a gesture since launch (the player clicked a button).
-        platform::probe_audio();
         self.goto_title();
-    }
-
-    /// On the web, start audio without waiting for a key in the game when the page
-    /// already had a gesture and the browser lets it play (see [`platform::audio_allowed`]).
-    /// Otherwise the toolkit starts it on the first key press as usual.
-    fn start_audio_early(&mut self, ctx: &mut Context) {
-        if let Some(a) = &mut ctx.audio
-            && !a.is_started()
-            && platform::audio_allowed()
-            && let Err(e) = a.start()
-        {
-            log::warn!("early audio start: {e}");
-        }
     }
 
     /// A deliberate "I'm back" from a dormant player: a key the game uses, a click, a tap
@@ -1098,9 +1083,6 @@ impl Game for Cheese {
         let (ww, wh) = ctx.gfx.size();
         let levels = levels();
         let options = Options::load();
-        // On the web, find out early whether the page's earlier gestures already unlock
-        // audio, so the title's thunder and music need not wait for a key press.
-        platform::probe_audio();
         Ok(Self {
             screen: Screen::new(),
             rgba,
@@ -1164,15 +1146,18 @@ impl Game for Cheese {
     fn update(&mut self, ctx: &mut Context, dt: f32) {
         for cmd in platform::commands() {
             match cmd {
-                HostCommand::Restart => self.restart(),
+                HostCommand::Restart => {
+                    self.restart();
+                    // The player clicked on the page to restart, so audio may start now.
+                    ctx.start_audio_if_allowed();
+                }
             }
         }
-        self.start_audio_early(ctx);
-        // Hidden by the host (left the game, or the canvas was taken off the page): freeze
-        // and stay silent; a level in progress waits behind the pause screen.
-        if self.dormant || !platform::is_active() {
-            let woke = self.dormant && platform::is_active() && Self::wake_pressed(ctx);
-            if woke {
+        // Left the game (after the farewell, on the web): freeze and stay silent until a
+        // key press wakes it. The canvas being taken off the page is the toolkit's job: it
+        // suspends the audio at once and reports it in `event`.
+        if self.dormant {
+            if Self::wake_pressed(ctx) {
                 self.dormant = false;
                 self.set_host_muted(ctx, false);
                 self.goto_title();
@@ -1185,7 +1170,6 @@ impl Game for Cheese {
             // The waking press only wakes.
             return;
         }
-        self.set_host_muted(ctx, false);
         self.t += dt;
         if ctx.input.key_pressed(Key::KeyM) {
             self.muted = !self.muted;
@@ -1234,12 +1218,15 @@ impl Game for Cheese {
     }
 
     /// Window events: refit the viewport on resize, and pause a level when the window
-    /// loses focus so the player does not come back to a squeaking mouse and wonder what
-    /// happened. Regaining focus does not unpause; the player does that.
+    /// loses focus or the host takes the canvas off the page, so the player does not come
+    /// back to a squeaking mouse and wonder what happened. Regaining focus does not unpause; the player does that.
     fn event(&mut self, _ctx: &mut Context, e: &GameEvent) {
         match *e {
             GameEvent::Resized { width, height } => self.viewport = Viewport::fit(width, height),
             GameEvent::FocusChanged(false) if self.mode == Mode::Play => self.paused = true,
+            // The canvas was off the page (the toolkit kept it silent meanwhile); both
+            // changes arrive on the first frame back, so pause on the way out.
+            GameEvent::CanvasAttached(false) if self.mode == Mode::Play => self.paused = true,
             _ => {}
         }
     }
