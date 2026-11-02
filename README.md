@@ -67,8 +67,9 @@ its approach rather than its looks:
 - Everything is drawn into a 320×200 framebuffer on the CPU, which is uploaded as a single
   texture each frame and scaled up by whole pixels.
 - Sprites are ASCII art in the source code, one character per palette entry.
-- All sound is synthesized in code: a tiny tracker plays the chiptune metal, and the sound
-  effects (the thunder included) are rendered at startup. No sample files.
+- All sound is synthesized in code: the chiptune metal plays live on game-toolkit's synthie
+  synth from songs written in tracker notation, and the sound effects (the thunder included)
+  are rendered at startup. No sample files.
 - The title cards are paintings reduced to 256 colours, like the title pictures of the time,
   and brought to life by moving the painting's own pixels: colour-cycled water, drifting mist,
   flickering windows, waving flags and lightning on cue.

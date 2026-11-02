@@ -44,7 +44,7 @@
 //! # Audio
 //!
 //! Sound effects are pre-rendered PCM buffers ([`sfx::Bank`]) played fire-and-forget.
-//! Music is a tracker song synthesized on the audio thread (`Music`); one of three tunes
+//! Music is a synthie song played live on the audio thread (`Music`); one of three tunes
 //! is chosen from the mode every frame, and its volume is turned down to silence while
 //! paused or after defeat. `M` mutes everything through the master volume.
 
@@ -59,7 +59,7 @@ use crate::render::anim::Anim;
 use crate::render::fx::Fx;
 use crate::render::title;
 use crate::render::{self, PlayView, Renderer, SelectView, Trail};
-use crate::sound::{SAMPLE_RATE, music, sfx, songs};
+use crate::sound::{SAMPLE_RATE, sfx, songs};
 
 /// The `id` of the HTML `<canvas>` the game draws into on the web; the page must contain a
 /// canvas with this id.
@@ -72,8 +72,8 @@ const MENU_VOLUME: f32 = 1.0;
 /// Volume of the confirm arpeggio (picking an entry, leaving the title). Its raw level is
 /// about 1.6 times the menu blip's, so 0.6 lands both at about the same loudness.
 const CONFIRM_VOLUME: f32 = 0.6;
-/// Music volume for the title/menu tune. The volumes are matched to the old tracker's
-/// loudness: synthie's mix is less squashed, so it needs a higher volume for the same level.
+/// Music volume for the title/menu tune. The music volumes were matched to the earlier,
+/// hand-rolled tracker's loudness (synthie's mix is less squashed, so it needs more volume).
 const ROCK_VOLUME: f32 = 0.66;
 /// Music volume for the in-game music box tune, which is quieter in character and so
 /// played a little louder.
@@ -159,9 +159,8 @@ enum Tune {
 
 /// The music: one song at a time, played live on synthie through kira.
 ///
-/// The tracker songs in [`songs`] are converted to synthie songs by [`music::to_synthie`]
-/// and handed to `Audio::play_synth`, which sequences them sample-accurately on the audio
-/// thread. The game thread keeps only a [`SynthHandle`] to stop the song or change its
+/// The synthie songs in [`songs`] are handed to `Audio::play_synth_sound`, which
+/// sequences them sample-accurately on the audio thread. The game thread keeps only a [`SynthHandle`] to stop the song or change its
 /// volume.
 #[derive(Default)]
 struct Music {
@@ -195,7 +194,7 @@ impl Music {
             Tune::Minuet => songs::game(),
             Tune::Extro => songs::extro(),
         };
-        // Played on synthie (game-toolkit's `synth` feature), converted from the tracker song.
+        // Played live on synthie (game-toolkit's `synth` feature).
         // Deferred: on the web it waits for the first key press or tap. Browsers refuse to
         // start audio before a user gesture, so the toolkit holds the stream until then.
         //
@@ -203,7 +202,7 @@ impl Music {
         // voices, so a lone note would play at a quarter of its level. Off matches the
         // offline renders (`Synth::render_song`) the music volumes are tuned against.
         let data = synthie::kira::SynthSoundData::new()
-            .with_sequencer(synth::SongPlayer::new(music::to_synthie(&song)))
+            .with_sequencer(synth::SongPlayer::new(song))
             .with_voice_normalization(synthie::prelude::VoiceNormalization::Off);
         match audio.play_synth_sound(data, PlayOptions::default().volume(self.volume).deferred()) {
             Ok(h) => self.handle = Some(h),

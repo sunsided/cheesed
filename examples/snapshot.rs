@@ -19,7 +19,6 @@ use cheese::logic::{CheeseKind, Dir, Event, Status, World, levels};
 use cheese::render::anim::Anim;
 use cheese::render::fx::Fx;
 use cheese::render::{PlayView, Renderer, SelectView, Trail};
-use cheese::sound::tracker::Player;
 use cheese::sound::{SAMPLE_RATE, songs};
 
 /// Renders each scene into the framebuffer and saves it, printing every path written.
@@ -195,28 +194,14 @@ fn main() {
         println!("{path}");
     };
     let wav = |name: &str, pcm: &[f32]| wav_at(name, pcm, SAMPLE_RATE);
+    // The songs as the game plays them, rendered offline on synthie.
     for (name, song) in [
         ("music_title", songs::title()),
         ("music_game", songs::game()),
         ("music_extro", songs::extro()),
     ] {
-        let secs = song.duration();
-        let mut p = Player::new(song);
-        let pcm: Vec<f32> = (0..(secs * SAMPLE_RATE as f32) as usize)
-            .map(|_| p.next_sample())
-            .collect();
-        wav(name, &pcm);
-    }
-    // The songs as the game plays them, on synthie (converted from the tracker songs
-    // rendered above), for comparing the two by ear.
-    for (name, song) in [
-        ("music_title_synthie", songs::title()),
-        ("music_game_synthie", songs::game()),
-        ("music_extro_synthie", songs::extro()),
-    ] {
         let mut synth = game_toolkit::prelude::Synth::new(44_100).with_target_peak(0.0);
-        let pcm = synth.render_song(cheese::sound::music::to_synthie(&song).one_shot(), 0.5);
-        wav_at(name, &pcm, 44_100);
+        wav_at(name, &synth.render_song(song.one_shot(), 0.5), 44_100);
     }
     let bank = cheese::sound::sfx::Bank::new();
     wav("thunder", &bank.thunder);

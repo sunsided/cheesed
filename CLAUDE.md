@@ -340,10 +340,13 @@ See README.md for the rules. Sister project of `../cookie-doh` (same architectur
   `Sprite::parse` asserts equal row widths, and `art::tests` parses them all.
 - Turn animation: `render::anim::Anim` tweens from the previous `State` to the current one;
   cheese sinks into a hole as it arrives (`SINK`), filled holes use `art.hole_full`.
-- `src/sound/`: all audio synthesized, no asset files. Music: `tracker` (cookie-doh's, plus
-  `drive` overdrive, `power` chords and a `c` crash) plays `songs::title()` (chiptune metal,
-  title + menu) `songs::game()` (a dainty music-box minuet - the deliberate letdown) and `songs::extro()`
-  (the title riff turned triumphant, E major, on the episode ending).
+- `src/sound/`: all audio synthesized, no asset files. Music: synthie songs (game-toolkit's
+  `synth` feature, tracker notation) in `songs.rs`: `title()` (chiptune metal, title + menu),
+  `game()` (a dainty music-box minuet - the deliberate letdown) and `extro()` (the title riff
+  turned triumphant, E major, on the episode ending). Power chords are three lanes per
+  channel via `transpose()` until synthie has chord cells (sunsided/synth#64). Played with
+  `play_synth_sound` and voice normalization off (synthie's default divides each channel by
+  its four voices). Effects stay hand-rolled (`synth.rs` oscillators, `sfx.rs`).
   SFX are pre-rendered PCM in `sfx::Bank`; the title's thunder is cued by
   `render::title::struck` so it lands on the lightning flash. `task snapshot` also writes
   the music and thunder as WAVs.
