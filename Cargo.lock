@@ -874,8 +874,6 @@ dependencies = [
 [[package]]
 name = "game-toolkit"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b04759b5a43fcde0da5a8beeadad809a1330744755896fba2996a7ba065347f"
 dependencies = [
  "anyhow",
  "game-toolkit-assets",
@@ -889,8 +887,6 @@ dependencies = [
 [[package]]
 name = "game-toolkit-assets"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cce941d38c0e6b413c21b661aa8dc79cb5effd6828ac7e856a752543b6961468"
 dependencies = [
  "anyhow",
  "js-sys",
@@ -904,19 +900,16 @@ dependencies = [
 [[package]]
 name = "game-toolkit-audio"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64bc5cd33481f37ff23d107b2f6a7ca63d2ec026d4630d95b5fff1dbd2d0b24b"
 dependencies = [
  "anyhow",
  "kira",
  "log",
+ "synthie",
 ]
 
 [[package]]
 name = "game-toolkit-core"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60af7b5bc39df131010933ee8e2b1b4fcd18e1f8dfbd68a3f8ecce19a2806d16"
 dependencies = [
  "anyhow",
  "game-toolkit-assets",
@@ -936,8 +929,6 @@ dependencies = [
 [[package]]
 name = "game-toolkit-gfx"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07ac8bcc9f95016956136b9917905e6e893dc27693a170ef565b557c7e9533fd"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -952,8 +943,6 @@ dependencies = [
 [[package]]
 name = "game-toolkit-input"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5acff05ea213eceb674fc4d6b1357a7debd916a8d1451c80786bb9667fc1b40"
 dependencies = [
  "gilrs",
  "log",
@@ -2877,6 +2866,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "synthie"
+version = "0.7.0"
+dependencies = [
+ "kira",
+ "rtrb",
 ]
 
 [[package]]

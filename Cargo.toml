@@ -9,7 +9,7 @@ authors = ["Markus Mayer"]
 publish = false
 
 [dependencies]
-game-toolkit = "0.7"
+game-toolkit = { version = "0.7", features = ["synth"] }
 log = "0.4"
 
 # Native builds log via env_logger; on the web the toolkit logs to the browser console.
@@ -48,3 +48,15 @@ codegen-units = 1
 # The solver test walks millions of states; unoptimized it takes minutes.
 [profile.test]
 opt-level = 2
+
+# Spin on the in-progress local game-toolkit (synthie music) and synthie. Feature branch only:
+# these paths don't exist on CI.
+[patch.crates-io]
+game-toolkit = { path = "../game-toolkit/crates/prelude" }
+game-toolkit-audio = { path = "../game-toolkit/crates/audio" }
+game-toolkit-core = { path = "../game-toolkit/crates/core" }
+game-toolkit-gfx = { path = "../game-toolkit/crates/gfx" }
+game-toolkit-input = { path = "../game-toolkit/crates/input" }
+game-toolkit-assets = { path = "../game-toolkit/crates/assets" }
+synthie = { path = "../synth/crates/synthie" }
+

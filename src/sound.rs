@@ -20,6 +20,7 @@
 //! (60 = middle C = C4, 69 = A4 = 440 Hz) and offsets in semitones. Rates written as
 //! `exp(-t * k)` use `k` in 1/s, so the time constant (fall to about 37 %) is `1/k` seconds.
 
+pub mod music;
 pub mod sfx;
 pub mod songs;
 pub mod synth;

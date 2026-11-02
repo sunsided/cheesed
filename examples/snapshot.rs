@@ -189,11 +189,12 @@ fn main() {
     save(&s, "farewell");
 
     // Audio, to listen to without starting the game.
-    let wav = |name: &str, pcm: &[f32]| {
+    let wav_at = |name: &str, pcm: &[f32], rate: u32| {
         let path = format!("{dir}/{name}.wav");
-        std::fs::write(&path, wav_bytes(pcm)).expect("write wav");
+        std::fs::write(&path, wav_bytes(pcm, rate)).expect("write wav");
         println!("{path}");
     };
+    let wav = |name: &str, pcm: &[f32]| wav_at(name, pcm, SAMPLE_RATE);
     for (name, song) in [
         ("music_title", songs::title()),
         ("music_game", songs::game()),
@@ -206,16 +207,26 @@ fn main() {
             .collect();
         wav(name, &pcm);
     }
+    // The same songs on synthie (feature branch), for comparing by ear.
+    for (name, song) in [
+        ("music_title_synthie", songs::title()),
+        ("music_game_synthie", songs::game()),
+        ("music_extro_synthie", songs::extro()),
+    ] {
+        let mut synth = game_toolkit::prelude::Synth::new(44_100).with_target_peak(0.0);
+        let pcm = synth.render_song(cheese::sound::music::to_synthie(&song).one_shot(), 0.5);
+        wav_at(name, &pcm, 44_100);
+    }
     let bank = cheese::sound::sfx::Bank::new();
     wav("thunder", &bank.thunder);
 }
 
 /// 16-bit mono PCM WAV.
 ///
-/// Writes the canonical 44-byte RIFF header (PCM format, one channel, [`SAMPLE_RATE`],
+/// Writes the canonical 44-byte RIFF header (PCM format, one channel, `rate`,
 /// two bytes per sample) followed by the samples, clamped to `-1.0..=1.0` and scaled to
 /// `i16`, little-endian.
-fn wav_bytes(pcm: &[f32]) -> Vec<u8> {
+fn wav_bytes(pcm: &[f32], rate: u32) -> Vec<u8> {
     let data_len = (pcm.len() * 2) as u32;
     let mut out = Vec::with_capacity(44 + data_len as usize);
     out.extend_from_slice(b"RIFF");
@@ -224,8 +235,8 @@ fn wav_bytes(pcm: &[f32]) -> Vec<u8> {
     out.extend_from_slice(&16u32.to_le_bytes());
     out.extend_from_slice(&1u16.to_le_bytes()); // PCM
     out.extend_from_slice(&1u16.to_le_bytes()); // mono
-    out.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
-    out.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * 2).to_le_bytes());
     out.extend_from_slice(&2u16.to_le_bytes());
     out.extend_from_slice(&16u16.to_le_bytes());
     out.extend_from_slice(b"data");

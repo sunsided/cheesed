@@ -59,8 +59,7 @@ use crate::render::anim::Anim;
 use crate::render::fx::Fx;
 use crate::render::title;
 use crate::render::{self, PlayView, Renderer, SelectView, Trail};
-use crate::sound::tracker::Player;
-use crate::sound::{SAMPLE_RATE, sfx, songs};
+use crate::sound::{SAMPLE_RATE, music, sfx, songs};
 
 /// The `id` of the HTML `<canvas>` the game draws into on the web; the page must contain a
 /// canvas with this id.
@@ -68,11 +67,14 @@ pub const CANVAS_ID: &str = "cheese";
 /// Overall loudness of sound effects, multiplied into every per-effect volume so effects
 /// sit at a sensible level against the music.
 const SFX_VOLUME: f32 = 0.6;
-/// Music volume for the title/menu tune and the ending tune.
-const ROCK_VOLUME: f32 = 0.42;
+/// Music volume for the title/menu tune. The volumes are matched to the old tracker's
+/// loudness: synthie's mix is less squashed, so it needs a higher volume for the same level.
+const ROCK_VOLUME: f32 = 0.66;
 /// Music volume for the in-game music box tune, which is quieter in character and so
 /// played a little louder.
-const MINUET_VOLUME: f32 = 0.55;
+const MINUET_VOLUME: f32 = 1.57;
+/// Music volume for the extro (same character as the title rock).
+const EXTRO_VOLUME: f32 = 0.63;
 /// Holding a direction: first repeat after this long, then every `REPEAT_EVERY`.
 /// In seconds; the gap lets a quick tap produce exactly one move.
 const REPEAT_DELAY: f32 = 0.24;
@@ -150,15 +152,16 @@ enum Tune {
     Extro,
 }
 
-/// The music stream: one song at a time, synthesized on the audio thread.
+/// The music: one song at a time, played live on synthie through kira.
 ///
-/// A tracker [`Player`] is moved into a closure that the audio backend calls whenever it
-/// needs samples, so the song is rendered on the fly rather than pre-rendered. The game
-/// thread keeps only a [`StreamHandle`] to stop the stream or change its volume.
+/// The tracker songs in [`songs`] are converted to synthie songs by [`music::to_synthie`]
+/// and handed to `Audio::play_synth`, which sequences them sample-accurately on the audio
+/// thread. The game thread keeps only a [`SynthHandle`] to stop the song or change its
+/// volume.
 #[derive(Default)]
 struct Music {
-    /// The running stream, if one could be started.
-    handle: Option<StreamHandle>,
+    /// The playing song, if one could be started.
+    handle: Option<SynthHandle>,
     /// The tune last asked for. Set even when there is no audio device, so `play` does not
     /// retry every frame.
     tune: Option<Tune>,
@@ -187,14 +190,12 @@ impl Music {
             Tune::Minuet => songs::game(),
             Tune::Extro => songs::extro(),
         };
-        let mut player = Player::new(song);
-        let stream = move |out: &mut [f32]| player.fill(out);
+        // Played on synthie (game-toolkit's `synth` feature), converted from the tracker song.
         // Deferred: on the web it waits for the first key press or tap. Browsers refuse to
         // start audio before a user gesture, so the toolkit holds the stream until then.
-        match audio.play_stream_with(
-            stream,
-            SAMPLE_RATE,
-            PlayOptions::default().volume(self.volume).deferred(),
+        match audio.play_synth(
+            music::to_synthie(&song),
+            PlayOptions::looped().volume(self.volume).deferred(),
         ) {
             Ok(h) => self.handle = Some(h),
             Err(e) => log::warn!("music: {e}"),
@@ -1216,7 +1217,8 @@ impl Game for Cheese {
             && self.end_t >= render::defeat::DELAY;
         let volume = match (self.paused || defeated, tune) {
             (true, _) => 0.0,
-            (false, Tune::Rock | Tune::Extro) => ROCK_VOLUME,
+            (false, Tune::Rock) => ROCK_VOLUME,
+            (false, Tune::Extro) => EXTRO_VOLUME,
             (false, Tune::Minuet) => MINUET_VOLUME,
         };
         self.music.set_volume(volume);
