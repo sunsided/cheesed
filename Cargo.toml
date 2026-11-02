@@ -49,8 +49,9 @@ codegen-units = 1
 [profile.test]
 opt-level = 2
 
-# Spin on the in-progress local game-toolkit (synthie music) and synthie. Feature branch only:
-# these paths don't exist on CI.
+# Spin on the local game-toolkit until 0.7.1 (synthie music) is on crates.io; synthie 0.7.1
+# already is. Feature branch only: these paths don't exist on CI. Remove this section once
+# game-toolkit 0.7.1 is published.
 [patch.crates-io]
 game-toolkit = { path = "../game-toolkit/crates/prelude" }
 game-toolkit-audio = { path = "../game-toolkit/crates/audio" }
@@ -58,5 +59,4 @@ game-toolkit-core = { path = "../game-toolkit/crates/core" }
 game-toolkit-gfx = { path = "../game-toolkit/crates/gfx" }
 game-toolkit-input = { path = "../game-toolkit/crates/input" }
 game-toolkit-assets = { path = "../game-toolkit/crates/assets" }
-synthie = { path = "../synth/crates/synthie" }
 
