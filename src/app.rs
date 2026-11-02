@@ -44,7 +44,7 @@
 //! # Audio
 //!
 //! Sound effects are pre-rendered PCM buffers ([`sfx::Bank`]) played fire-and-forget.
-//! Music is a tracker song synthesized on the audio thread (`Music`); one of three tunes
+//! Music is a synthie song played live on the audio thread (`Music`); one of three tunes
 //! is chosen from the mode every frame, and its volume is turned down to silence while
 //! paused or after defeat. `M` mutes everything through the master volume.
 
@@ -59,7 +59,6 @@ use crate::render::anim::Anim;
 use crate::render::fx::Fx;
 use crate::render::title;
 use crate::render::{self, PlayView, Renderer, SelectView, Trail};
-use crate::sound::tracker::Player;
 use crate::sound::{SAMPLE_RATE, sfx, songs};
 
 /// The `id` of the HTML `<canvas>` the game draws into on the web; the page must contain a
@@ -68,11 +67,19 @@ pub const CANVAS_ID: &str = "cheese";
 /// Overall loudness of sound effects, multiplied into every per-effect volume so effects
 /// sit at a sensible level against the music.
 const SFX_VOLUME: f32 = 0.6;
-/// Music volume for the title/menu tune and the ending tune.
-const ROCK_VOLUME: f32 = 0.42;
+/// Volume of the short blip when the menu cursor moves. Full volume: it lasts only 30 ms.
+const MENU_VOLUME: f32 = 1.0;
+/// Volume of the confirm arpeggio (picking an entry, leaving the title). Its raw level is
+/// about 1.6 times the menu blip's, so 0.6 lands both at about the same loudness.
+const CONFIRM_VOLUME: f32 = 0.6;
+/// Music volume for the title/menu tune. The music volumes were matched to the earlier,
+/// hand-rolled tracker's loudness (synthie's mix is less squashed, so it needs more volume).
+const ROCK_VOLUME: f32 = 0.66;
 /// Music volume for the in-game music box tune, which is quieter in character and so
 /// played a little louder.
-const MINUET_VOLUME: f32 = 0.55;
+const MINUET_VOLUME: f32 = 1.57;
+/// Music volume for the extro (same character as the title rock).
+const EXTRO_VOLUME: f32 = 0.63;
 /// Holding a direction: first repeat after this long, then every `REPEAT_EVERY`.
 /// In seconds; the gap lets a quick tap produce exactly one move.
 const REPEAT_DELAY: f32 = 0.24;
@@ -150,15 +157,15 @@ enum Tune {
     Extro,
 }
 
-/// The music stream: one song at a time, synthesized on the audio thread.
+/// The music: one song at a time, played live on synthie through kira.
 ///
-/// A tracker [`Player`] is moved into a closure that the audio backend calls whenever it
-/// needs samples, so the song is rendered on the fly rather than pre-rendered. The game
-/// thread keeps only a [`StreamHandle`] to stop the stream or change its volume.
+/// The synthie songs in [`songs`] are handed to `Audio::play_synth_sound`, which
+/// sequences them sample-accurately on the audio thread. The game thread keeps only a [`SynthHandle`] to stop the song or change its
+/// volume.
 #[derive(Default)]
 struct Music {
-    /// The running stream, if one could be started.
-    handle: Option<StreamHandle>,
+    /// The playing song, if one could be started.
+    handle: Option<SynthHandle>,
     /// The tune last asked for. Set even when there is no audio device, so `play` does not
     /// retry every frame.
     tune: Option<Tune>,
@@ -187,15 +194,17 @@ impl Music {
             Tune::Minuet => songs::game(),
             Tune::Extro => songs::extro(),
         };
-        let mut player = Player::new(song);
-        let stream = move |out: &mut [f32]| player.fill(out);
+        // Played live on synthie (game-toolkit's `synth` feature).
         // Deferred: on the web it waits for the first key press or tap. Browsers refuse to
         // start audio before a user gesture, so the toolkit holds the stream until then.
-        match audio.play_stream_with(
-            stream,
-            SAMPLE_RATE,
-            PlayOptions::default().volume(self.volume).deferred(),
-        ) {
+        //
+        // Voice normalization is off: synthie's default divides each channel by its four
+        // voices, so a lone note would play at a quarter of its level. Off matches the
+        // offline renders (`Synth::render_song`) the music volumes are tuned against.
+        let data = synthie::kira::SynthSoundData::new()
+            .with_sequencer(synth::SongPlayer::new(song))
+            .with_voice_normalization(synthie::prelude::VoiceNormalization::Off);
+        match audio.play_synth_sound(data, PlayOptions::default().volume(self.volume).deferred()) {
             Ok(h) => self.handle = Some(h),
             Err(e) => log::warn!("music: {e}"),
         }
@@ -570,7 +579,7 @@ impl Cheese {
         let settings = input.key_pressed(Key::KeyM) || input.key_pressed(Key::KeyC);
         if input.any_pressed() && !settings {
             if (self.sound_was_on && sound_on) || self.unlock_press_spent {
-                self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
+                self.sound(&mut ctx.audio, &self.sfx.confirm, CONFIRM_VOLUME);
                 self.cursor = self.first_unsolved();
                 self.goto_select();
             } else {
@@ -601,7 +610,7 @@ impl Cheese {
         if self.order {
             if it.confirm || it.back || it.tap.is_some() || it.dir.is_some() {
                 self.order = false;
-                self.sound(&mut ctx.audio, &self.sfx.menu, 0.6);
+                self.sound(&mut ctx.audio, &self.sfx.menu, MENU_VOLUME);
             }
             return;
         }
@@ -609,7 +618,7 @@ impl Cheese {
             let next = render::select_move(n, self.cursor, d);
             if next != self.cursor {
                 self.cursor = next;
-                self.sound(&mut ctx.audio, &self.sfx.menu, 0.6);
+                self.sound(&mut ctx.audio, &self.sfx.menu, MENU_VOLUME);
             }
         }
         let mut play = it.confirm;
@@ -622,10 +631,10 @@ impl Cheese {
         if play {
             if self.cursor >= n {
                 // A locked episode: its title card first, then the nag.
-                self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
+                self.sound(&mut ctx.audio, &self.sfx.confirm, CONFIRM_VOLUME);
                 self.show_intro(self.cursor - n + 2);
             } else if self.cursor < self.unlocked() {
-                self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
+                self.sound(&mut ctx.audio, &self.sfx.confirm, CONFIRM_VOLUME);
                 if self.cursor == 0 {
                     // The episode begins: its title card first.
                     self.show_intro(1);
@@ -703,10 +712,10 @@ impl Cheese {
         } else if self.options.cheese && ctx.input.key_pressed(Key::KeyI) {
             // Testing: flip through the episode cards.
             self.show_intro(self.intro_episode % render::intro::EPISODES + 1);
-            self.sound(&mut ctx.audio, &self.sfx.menu, 0.6);
+            self.sound(&mut ctx.audio, &self.sfx.menu, MENU_VOLUME);
         } else if self.end_t > 0.4 && (it.confirm || it.tap.is_some()) {
             if self.intro_episode == 1 {
-                self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
+                self.sound(&mut ctx.audio, &self.sfx.confirm, CONFIRM_VOLUME);
                 self.start_level(0);
             } else {
                 // Later episodes are "registered version only": on to the order form.
@@ -766,7 +775,7 @@ impl Cheese {
         if status == Status::Solved && self.end_t >= render::SOLVED_DELAY {
             let next = it.confirm || it.tap.is_some();
             if next {
-                self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
+                self.sound(&mut ctx.audio, &self.sfx.confirm, CONFIRM_VOLUME);
                 if self.cursor + 1 < self.levels.len() {
                     self.start_level(self.cursor + 1);
                 } else {
@@ -970,7 +979,7 @@ impl Cheese {
         if it.back {
             self.goto_select();
         } else if self.end_t > 1.0 && (it.confirm || it.tap.is_some()) {
-            self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
+            self.sound(&mut ctx.audio, &self.sfx.confirm, CONFIRM_VOLUME);
             self.mode = Mode::Onward;
             self.end_t = 0.0;
         }
@@ -985,7 +994,7 @@ impl Cheese {
         if it.back {
             self.goto_select();
         } else if self.end_t > 0.6 && (it.confirm || it.tap.is_some()) {
-            self.sound(&mut ctx.audio, &self.sfx.confirm, 1.0);
+            self.sound(&mut ctx.audio, &self.sfx.confirm, CONFIRM_VOLUME);
             self.goto_select();
             self.cursor = self.levels.len();
             self.order = true;
@@ -1216,7 +1225,8 @@ impl Game for Cheese {
             && self.end_t >= render::defeat::DELAY;
         let volume = match (self.paused || defeated, tune) {
             (true, _) => 0.0,
-            (false, Tune::Rock | Tune::Extro) => ROCK_VOLUME,
+            (false, Tune::Rock) => ROCK_VOLUME,
+            (false, Tune::Extro) => EXTRO_VOLUME,
             (false, Tune::Minuet) => MINUET_VOLUME,
         };
         self.music.set_volume(volume);

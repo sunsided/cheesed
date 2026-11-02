@@ -530,9 +530,9 @@ dependencies = [
 
 [[package]]
 name = "crc32fast"
-version = "1.5.3"
+version = "1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ba106e844045ddc02c20768ac4b0b7cb45f2cc2ecbd833ac9f5dacb183c2055"
+checksum = "5f97d3416d5337d15c4b0d78c8c91df922ca143f57ec20e2d1c188333047ef04"
 dependencies = [
  "cfg-if",
 ]
@@ -873,9 +873,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit"
-version = "0.7.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b04759b5a43fcde0da5a8beeadad809a1330744755896fba2996a7ba065347f"
+checksum = "ec64b3ae0aa7e6e534baba7ffbc04265e4adaef612fb6423f87650cd0ce1381a"
 dependencies = [
  "anyhow",
  "game-toolkit-assets",
@@ -888,9 +888,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-assets"
-version = "0.7.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cce941d38c0e6b413c21b661aa8dc79cb5effd6828ac7e856a752543b6961468"
+checksum = "91c15d1a707c6f1e44b2c3cc812724db417fc0612dac19a9673a363e74dc0536"
 dependencies = [
  "anyhow",
  "js-sys",
@@ -903,20 +903,21 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-audio"
-version = "0.7.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64bc5cd33481f37ff23d107b2f6a7ca63d2ec026d4630d95b5fff1dbd2d0b24b"
+checksum = "e9b85d9751e4ba06e6be0ac5d207a5776d60984d769f92cbc2b0b52a14a6661c"
 dependencies = [
  "anyhow",
  "kira",
  "log",
+ "synthie",
 ]
 
 [[package]]
 name = "game-toolkit-core"
-version = "0.7.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60af7b5bc39df131010933ee8e2b1b4fcd18e1f8dfbd68a3f8ecce19a2806d16"
+checksum = "f5488468be2d49fb66083b9d802415378f70b330452b7c7445082d9aaa82a047"
 dependencies = [
  "anyhow",
  "game-toolkit-assets",
@@ -935,9 +936,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-gfx"
-version = "0.7.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07ac8bcc9f95016956136b9917905e6e893dc27693a170ef565b557c7e9533fd"
+checksum = "213865116d5d3af13f144a7e47cccd200cf7ead5b8bfb7c393f8e905437a13ff"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -951,9 +952,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-input"
-version = "0.7.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5acff05ea213eceb674fc4d6b1357a7debd916a8d1451c80786bb9667fc1b40"
+checksum = "e2ae59fd91859cb25391c8ade49044c94d717972579293305d97bb0794ebdab7"
 dependencies = [
  "gilrs",
  "log",
@@ -2877,6 +2878,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "synthie"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bcbc665a9e6e62965aa409fbff4ce18832af0436d1574ef13e336a14ba9795c2"
+dependencies = [
+ "kira",
+ "rtrb",
 ]
 
 [[package]]

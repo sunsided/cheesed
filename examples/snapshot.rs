@@ -19,7 +19,6 @@ use cheese::logic::{CheeseKind, Dir, Event, Status, World, levels};
 use cheese::render::anim::Anim;
 use cheese::render::fx::Fx;
 use cheese::render::{PlayView, Renderer, SelectView, Trail};
-use cheese::sound::tracker::Player;
 use cheese::sound::{SAMPLE_RATE, songs};
 
 /// Renders each scene into the framebuffer and saves it, printing every path written.
@@ -189,22 +188,20 @@ fn main() {
     save(&s, "farewell");
 
     // Audio, to listen to without starting the game.
-    let wav = |name: &str, pcm: &[f32]| {
+    let wav_at = |name: &str, pcm: &[f32], rate: u32| {
         let path = format!("{dir}/{name}.wav");
-        std::fs::write(&path, wav_bytes(pcm)).expect("write wav");
+        std::fs::write(&path, wav_bytes(pcm, rate)).expect("write wav");
         println!("{path}");
     };
+    let wav = |name: &str, pcm: &[f32]| wav_at(name, pcm, SAMPLE_RATE);
+    // The songs as the game plays them, rendered offline on synthie.
     for (name, song) in [
         ("music_title", songs::title()),
         ("music_game", songs::game()),
         ("music_extro", songs::extro()),
     ] {
-        let secs = song.duration();
-        let mut p = Player::new(song);
-        let pcm: Vec<f32> = (0..(secs * SAMPLE_RATE as f32) as usize)
-            .map(|_| p.next_sample())
-            .collect();
-        wav(name, &pcm);
+        let mut synth = game_toolkit::prelude::Synth::new(44_100).with_target_peak(0.0);
+        wav_at(name, &synth.render_song(song.one_shot(), 0.5), 44_100);
     }
     let bank = cheese::sound::sfx::Bank::new();
     wav("thunder", &bank.thunder);
@@ -212,10 +209,10 @@ fn main() {
 
 /// 16-bit mono PCM WAV.
 ///
-/// Writes the canonical 44-byte RIFF header (PCM format, one channel, [`SAMPLE_RATE`],
+/// Writes the canonical 44-byte RIFF header (PCM format, one channel, `rate`,
 /// two bytes per sample) followed by the samples, clamped to `-1.0..=1.0` and scaled to
 /// `i16`, little-endian.
-fn wav_bytes(pcm: &[f32]) -> Vec<u8> {
+fn wav_bytes(pcm: &[f32], rate: u32) -> Vec<u8> {
     let data_len = (pcm.len() * 2) as u32;
     let mut out = Vec::with_capacity(44 + data_len as usize);
     out.extend_from_slice(b"RIFF");
@@ -224,8 +221,8 @@ fn wav_bytes(pcm: &[f32]) -> Vec<u8> {
     out.extend_from_slice(&16u32.to_le_bytes());
     out.extend_from_slice(&1u16.to_le_bytes()); // PCM
     out.extend_from_slice(&1u16.to_le_bytes()); // mono
-    out.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
-    out.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * 2).to_le_bytes());
     out.extend_from_slice(&2u16.to_le_bytes());
     out.extend_from_slice(&16u16.to_le_bytes());
     out.extend_from_slice(b"data");

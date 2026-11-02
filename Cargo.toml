@@ -9,7 +9,7 @@ authors = ["Markus Mayer"]
 publish = false
 
 [dependencies]
-game-toolkit = "0.7"
+game-toolkit = { version = "0.9", features = ["synth"] }
 log = "0.4"
 
 # Native builds log via env_logger; on the web the toolkit logs to the browser console.
