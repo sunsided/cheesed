@@ -11,7 +11,9 @@
 //! power chords are three lanes on one channel: the riff, a fifth up and an octave up.
 
 use game_toolkit::prelude::synth::{ChannelNo, Song, SynthParams, Tempo};
-use game_toolkit::prelude::synthie::params::{FilterMode, LfoShape, LfoTarget, Waveform};
+use game_toolkit::prelude::synthie::params::{
+    EnvParams, FilterParams, GlobalParams, LfoShape, LfoTarget, OscParams, Waveform,
+};
 use game_toolkit::prelude::synthie::pattern::parse_note;
 
 /// One synthie unit of pitch modulation is a tenth of an octave (`freq * 2^(pitch / 10)`),
@@ -29,18 +31,29 @@ fn patch(
     sustain: f32,
     release: f32,
 ) -> SynthParams {
-    let mut p = SynthParams::default();
-    p.osc.waveform = wave;
-    p.env.attack = attack;
-    p.env.decay = decay;
-    p.env.sustain = sustain;
-    p.env.release = release;
-    p.filter.filter_mode = FilterMode::LowPass;
-    p.filter.cutoff = 12_000.0;
-    p.filter.resonance = 0.0;
-    p.lfo.lfo_depth = 0.0;
-    p.global.volume = volume;
-    p
+    // synthie's sub-parameter structs have no `Default` of their own; each takes the rest of
+    // its fields from the full default patch (a low-pass filter, no LFO depth, ...).
+    let d = SynthParams::default();
+    SynthParams {
+        osc: OscParams {
+            waveform: wave,
+            ..d.osc
+        },
+        env: EnvParams {
+            attack,
+            decay,
+            sustain,
+            release,
+            ..d.env
+        },
+        filter: FilterParams {
+            cutoff: 12_000.0,
+            resonance: 0.0,
+            ..d.filter
+        },
+        global: GlobalParams { volume, ..d.global },
+        ..d
+    }
 }
 
 /// `p` with a sine vibrato of `semitones` depth at `rate` Hz on the pitch LFO.
