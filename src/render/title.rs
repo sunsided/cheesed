@@ -113,7 +113,7 @@ const STARS: [(i32, i32); 16] = [
 ///
 /// Overlay anchors on the cover, in picture pixels: the logo's painted star at its top-right
 /// corner (246, 10) gets a [`flare`]; the raised cheese's glints hop between (182, 54),
-/// (214, 62) and (194, 70); the giant cat's eyes are at (84, 56) and (113, 70). While
+/// (214, 62) and (194, 70); the giant cat's eyes are at (82, 56) and (110, 68). While
 /// [`lightning`] is on, the whole screen is tinted 16% towards a pale violet (`#d8c8ff`).
 /// The blinking prompt sits in the bottom-right corner on a dark plate: "PRESS ANY KEY",
 /// or "CLICK FOR SOUND" while `need_sound` (a browser that hasn't unlocked audio yet; the
@@ -128,7 +128,7 @@ pub fn draw(s: &mut Screen, cover: &Picture, t: f32, need_sound: bool) {
     flare(s, (ox + 246, oy + 10), t);
     // The cheese glints, and now and then the cat's eyes do too.
     glints(s, cover, &[(182, 54), (214, 62), (194, 70)], t, 1.3);
-    eye_glint(s, (ox, oy), &[(84, 56), (113, 70)], t);
+    eye_glint(s, (ox, oy), &[(82, 56), (110, 68)], t);
 
     // Lightning, now and then.
     if lightning(t) {
