@@ -165,3 +165,15 @@ jobs:
             --title "Cheesed! $GITHUB_REF_NAME" \
             --generate-notes \
             --verify-tag
+
+  # Tell games.markusmayer.dev, which verifies this release (SHA256SUMS, provenance) and
+  # opens a registry bump that auto-merges and deploys. Needs the games GitHub App
+  # installed on that repository: variable GAMES_APP_ID, secret GAMES_APP_PRIVATE_KEY.
+  announce:
+    name: Announce on games.markusmayer.dev
+    needs: [release, pages]
+    uses: sunsided/games.markusmayer.dev/.github/workflows/announce.yml@main
+    with:
+      app-id: ${{ vars.GAMES_APP_ID }}
+    secrets:
+      private-key: ${{ secrets.GAMES_APP_PRIVATE_KEY }}
