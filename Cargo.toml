@@ -4,7 +4,7 @@ version = "0.1.2"
 edition = "2024"
 rust-version = "1.95"
 description = "Cheesed! A thrilling action adventure in DOS-era dress. The Mouse. The Cheese. The Destiny."
-license = "EUPL-1.2"
+license = "EUPL-1.2 AND LicenseRef-Cheesed-Artwork"
 authors = ["Markus Mayer"]
 publish = false
 

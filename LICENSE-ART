@@ -1,0 +1,32 @@
+Cheesed! artwork
+Copyright (c) 2026 Markus Mayer. All rights reserved, except as granted below.
+
+The source code of Cheesed! is licensed under the EUPL-1.2 (see LICENSE). The EUPL does
+NOT apply to the artwork listed below.
+
+Covered artwork ("the Artwork"):
+
+  - the paintings embedded in the game: src/render/*.bin (title cover, episode intro cards,
+    defeat card, farewell card, "Onward!" teaser, victory card), and the source images they
+    are converted from;
+  - the images in docs/screenshots/;
+  - any copy, conversion, crop, recoloring or other derivative of the above, in any format.
+
+You may, without asking, as long as you credit the Artwork as "Artwork by Markus Mayer, from
+Cheesed!" and keep this file with it:
+
+  - copy and redistribute Cheesed! with the Artwork, for free or for a fee;
+  - modify Cheesed! and distribute your modified version with the Artwork, including
+    changed, cropped or recolored versions of it;
+  - show screenshots, videos and streams of the game, for reviews, commentary, news and
+    similar uses.
+
+You may not, without the author's prior written permission:
+
+  - use the Artwork, or derivatives of it, in another game or work that is not Cheesed! or
+    a modified version of it, or on its own;
+  - present the Artwork, or derivatives of it, as your own work, or remove the credit.
+
+THE ARTWORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+
+Contact: https://github.com/sunsided

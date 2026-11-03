@@ -55,7 +55,7 @@ jobs:
         run: |
           name="cheesed-${GITHUB_REF_NAME}-linux-x86_64"
           mkdir -p "pkg/$name"
-          cp target/release/cheese LICENSE README.md THIRD_PARTY_LICENSES.html "pkg/$name/"
+          cp target/release/cheese LICENSE LICENSE-ART README.md THIRD_PARTY_LICENSES.html "pkg/$name/"
           tar -C pkg -czf "$name.tar.gz" "$name"
 
       - uses: actions/upload-artifact@v7

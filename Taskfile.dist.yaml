@@ -238,7 +238,7 @@ tasks:
     deps: [web:release]
     cmds:
       - mkdir -p "{{.DEST}}"
-      - cp {{.WEB_RELEASE}}/cheese.js {{.WEB_RELEASE}}/cheese_bg.wasm {{.WEB_RELEASE}}/THIRD_PARTY_LICENSES.html "{{.DEST}}/"
+      - cp {{.WEB_RELEASE}}/cheese.js {{.WEB_RELEASE}}/cheese_bg.wasm {{.WEB_RELEASE}}/THIRD_PARTY_LICENSES.html {{.WEB_RELEASE}}/LICENSE-ART "{{.DEST}}/"
       - echo "Exported to {{.DEST}} - embed with embed/Cheesed.svelte (base = its URL path)"
 
   # ---- Release ---------------------------------------------------------------------------
@@ -256,7 +256,7 @@ tasks:
     cmds:
       - cargo build --release --locked
       - rm -rf {{.PKG_DIR}} && mkdir -p {{.PKG_DIR}}/cheesed-{{.TAG}}-linux-x86_64
-      - cp target/release/cheese LICENSE README.md THIRD_PARTY_LICENSES.html {{.PKG_DIR}}/cheesed-{{.TAG}}-linux-x86_64/
+      - cp target/release/cheese LICENSE LICENSE-ART README.md THIRD_PARTY_LICENSES.html {{.PKG_DIR}}/cheesed-{{.TAG}}-linux-x86_64/
       - tar -C {{.PKG_DIR}} -czf {{.PKG_DIR}}/cheesed-{{.TAG}}-linux-x86_64.tar.gz cheesed-{{.TAG}}-linux-x86_64
       - rm -rf {{.PKG_DIR}}/cheesed-{{.TAG}}-linux-x86_64
       - (cd {{.WEB_RELEASE}} && zip -q -r -9 "{{.ROOT_DIR}}/{{.PKG_DIR}}/cheesed-{{.TAG}}-web.zip" .)

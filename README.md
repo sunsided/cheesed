@@ -82,4 +82,11 @@ We're looking forward to the theatrical release.
 
 ## License
 
-EUPL-1.2. The notices for every bundled dependency are in `THIRD_PARTY_LICENSES.html`.
+The source code is EUPL-1.2 (`LICENSE`). The notices for every bundled dependency are in
+`THIRD_PARTY_LICENSES.html`.
+
+The paintings embedded in the game (`src/render/*.bin`) and the images in `docs/screenshots/`
+are not EUPL: they are © Markus Mayer under `LICENSE-ART`. Copy, modify and redistribute
+Cheesed! with them, also commercially, as long as you credit them ("Artwork by Markus Mayer,
+from Cheesed!"). Using them in another game or work, or passing them off as your own, needs
+permission.
